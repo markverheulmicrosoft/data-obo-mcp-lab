@@ -1,0 +1,25 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": {"value": "velora-mcp-dev-f9ba"},
+    "resourceGroupName": {"value": "rg-velora-mcp-dev-f9ba"},
+    "containerEnvironmentName": {"value": "cae-velora-mcp-dev-f9ba"},
+    "gatewayAppName": {"value": "ca-velora-mcp-dev-f9ba-gateway"},
+    "rightsAppName": {"value": "ca-velora-mcp-dev-f9ba-rights"},
+    "registryName": {"value": "crveloramcpdevf9ba"},
+    "keyVaultName": {"value": "kv-velora-mcp-dev-f9ba"},
+    "logWorkspaceName": {"value": "log-velora-mcp-dev-f9ba"},
+    "appInsightsName": {"value": "appi-velora-mcp-dev-f9ba"},
+    "gatewayIdentityName": {"value": "mi-velora-mcp-dev-f9ba-gateway"},
+    "rightsIdentityName": {"value": "mi-velora-mcp-dev-f9ba-rights"},
+    "location": {"value": "swedencentral"},
+    "sessionId": {"value": "example-only"},
+    "deployedBy": {"value": "local-deployer"},
+    "createdAt": {"value": "2026-10-15T12:27:57.1667929Z"},
+    "deployerObjectId": {"value": "00000000-0000-0000-0000-000000000000"},
+    "tenantId": {"value": "00000000-0000-0000-0000-000000000000"},
+    "gatewayClientId": {"value": "00000000-0000-0000-0000-000000000001"},
+    "rightsClientId": {"value": "00000000-0000-0000-0000-000000000002"}
+  }
+}

@@ -24,6 +24,12 @@ Installeren op een nieuwe machine: maak een Python 3.11+-venv en installeer
 `requirements.txt`. De instructies staan in dezelfde handleiding.
 De browserdemo hieronder is de eerdere conceptsimulator, niet deze MCP-server.
 
+## Azure-deployment
+
+De deploymentbestanden staan in **`infra\`**. Zie **`infra\README.md`** voor de
+korte route met een private `.env`: eerst het doel tonen, daarna expliciet
+`python infra\deploy.py --apply`. Er is nog geen live deployment uitgevoerd.
+
 ## Nieuwe richting: MCP in het midden
 
 De verduidelijkte onderzoeksvraag is **een centrale, server-side MCP-toegangslaag**:
@@ -155,6 +161,7 @@ de cloudvariant expliciet per gebruiker/tenant worden geisoleerd.
 | `docs\bouwen.md` | Korte uitleg, lokale MCP-tests en echte Entra-configuratie |
 | `mcp_lab\` | Gateway, onafhankelijke testbron, gedeelde authenticatie en referentieclient |
 | `tests\test_mcp_lab.py` | Echte HTTP/MCP-tests; Entra-uitwisseling blijft een testdouble |
+| `infra\` | Bicep, image, lokale deployroute, Entra-bootstrap en veiligheidstests |
 | `.archify\architecture-mcp-federation-20261015-092111\mcp-federation.html` | Eigen gateway, custom Rights Test MCP en 3P MCP-servers; nog ontwerp |
 
 De `.archify`-diagrammen en `.copilot-azure`-sessies zijn lokale artifacts en
@@ -180,5 +187,5 @@ Sluit daarna een echte bron aan en bewijs bronautorisatie voordat
 je de tweede bron toevoegt. `docs\cloud-lab.md` blijft achtergrond bij de eerdere,
 Foundry-centrale variant.
 Voor provisioning moeten tenant, sandbox-resources, bevoegdheden, regio en budget
-expliciet vaststaan. Er is bewust nog geen `azd up`, automatische consent,
-role assignment of cloud-deployscript toegevoegd.
+expliciet vaststaan. `infra\deploy.py` verzorgt daarna de eigen appregistraties,
+consent, labrollen en Azure-deployment. Zonder `--apply` verandert het niets.

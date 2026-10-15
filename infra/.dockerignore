@@ -1,0 +1,6 @@
+**
+!Dockerfile
+!.dockerignore
+!requirements.txt
+!mcp_lab/
+!mcp_lab/*.py

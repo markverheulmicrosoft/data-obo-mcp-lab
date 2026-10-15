@@ -144,8 +144,9 @@ logs niet langer dan nodig. Gebruik geen echte bedrijfsdata in deze proef.
 ## Live deployment
 
 De gebruiker heeft Zava aangewezen; toegang en beheerrechten zijn read-only
-bevestigd. De publieke hosting, appregistraties en deploypipeline zijn nog niet
-aangemaakt. Dat volgt na keuze en goedkeuring van de concrete deployment.
+bevestigd. De publieke hosting en appregistraties zijn nog niet aangemaakt.
+De uitvoerbare deploymentcode staat in `infra\`; zie `infra\README.md`.
+Die leest een private `.env` en voert pas met `--apply` wijzigingen uit.
 De servers gebruiken lokaal standaard loopback en poort 8000/8001.
 `HOST` en `PORT` kunnen per proces worden ingesteld; containerhosting gebruikt
 expliciet `HOST=0.0.0.0`. Zet geen gedeelde `PORT` in de lokale `.env` als beide
