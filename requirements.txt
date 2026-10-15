@@ -1,0 +1,6 @@
+mcp==2.3.0
+msal==1.39.0
+PyJWT[crypto]==2.15.1
+httpx2==2.13.1
+uvicorn==0.54.0
+python-dotenv==1.2.4
