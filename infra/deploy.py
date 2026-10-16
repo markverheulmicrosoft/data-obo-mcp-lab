@@ -8,10 +8,13 @@ import shutil
 import subprocess
 import tempfile
 import time
+import webbrowser
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID, uuid4
+from urllib.parse import quote
 
 import httpx2
 from dotenv import dotenv_values, set_key
@@ -136,13 +139,67 @@ def arm_parameters(cfg: Settings, state: dict, operator: dict, apps: dict, image
         "tenantId": cfg.tenant, "gatewayClientId": apps["gateway"], "rightsClientId": apps["rights"],
         "containerImage": image,
     }
-    if image != PLACEHOLDER:
-        values["gatewayClientSecret"] = apps["secret"]
     return {
         "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
         "contentVersion": "1.0.0.0",
         "parameters": {key: {"value": value} for key, value in values.items()},
     }
+
+
+def inspect_preview(preview: dict, subscription: str, resource_group: str) -> dict:
+    if preview.get("status") != "Succeeded":
+        raise RuntimeError("What-if is niet geslaagd; geen deployment uitvoeren.")
+    scope = f"/subscriptions/{subscription}/resourceGroups/{resource_group}".casefold()
+    changes = preview["changes"]
+    for change in changes:
+        resource = change["resourceId"].casefold()
+        if change["changeType"] == "Unsupported":
+            # Nieuwe managed identities hebben nog geen principalId; de RBAC-naam blijft dan een ARM-expressie.
+            assignment = re.match(
+                r"^\[extensionresourceid\('([^']+)',\s*'microsoft\.authorization/roleassignments',\s*guid\(",
+                resource,
+            )
+            if assignment is not None:
+                resource = assignment.group(1)
+        if resource != scope and not resource.startswith(scope + "/"):
+            raise RuntimeError("What-if bevat een resource buiten de bedoelde resourcegroep.")
+        if change["changeType"] == "Delete":
+            raise RuntimeError("What-if bevat een Delete; eerst expliciet beoordelen.")
+    return dict(Counter(change["changeType"] for change in changes))
+
+
+def seed_vault(az: Azure, cfg: Settings, secret: str) -> None:
+    def rbac_pending(response):
+        if response.status_code != 403:
+            return False
+        error = response.json().get("error", {})
+        code = (error.get("innererror") or {}).get("code", error.get("code", "Forbidden"))
+        if code != "ForbiddenByRbac":
+            raise RuntimeError(f"Key Vault-toegang geblokkeerd ({code}); netwerk/policy niet automatisch wijzigen.")
+        return True
+
+    token = az.run("account", "get-access-token", "--subscription", cfg.subscription,
+                   "--resource", "https://vault.azure.net")["accessToken"]
+    url = f"https://{cfg.names()['keyVaultName']}.vault.azure.net/secrets/gateway-client-secret"
+    with httpx2.Client(headers={"Authorization": f"Bearer {token}"}, timeout=30, follow_redirects=False) as http:
+        for delay in (0, 10, 20):
+            time.sleep(delay)
+            result = http.get(url, params={"api-version": "7.4"})
+            if rbac_pending(result):
+                continue
+            if result.status_code == 200:
+                if result.json()["value"] != secret:
+                    raise RuntimeError("Key Vault en .env hebben verschillende secrets; geen stille rotatie.")
+                return
+            if result.status_code != 404:
+                raise RuntimeError(f"Key Vault secretcontrole mislukt: HTTP {result.status_code}.")
+            created = http.put(url, params={"api-version": "7.4"}, json={"value": secret})
+            if rbac_pending(created):
+                continue
+            if created.status_code not in {200, 201}:
+                raise RuntimeError(f"Key Vault secretopslag mislukt: HTTP {created.status_code}.")
+            return
+    raise RuntimeError("Key Vault-RBAC is nog niet beschikbaar; wacht en herhaal zonder credentials te regenereren.")
 
 
 def smoke(gateway_url: str, tenant: str, client_id: str) -> None:
@@ -204,7 +261,8 @@ def apply(cfg: Settings, values: dict, env_file: Path) -> None:
                       "--name", "gateway-client-secret", "--query", "value", "--subscription", cfg.subscription)
 
     print("1/5 Entra-apps, delegated consent en twee onafhankelijke roltoewijzingen.")
-    token = az.run("account", "get-access-token", "--tenant", cfg.tenant, "--resource-type", "ms-graph")["accessToken"]
+    token = az.run("account", "get-access-token", "--subscription", cfg.subscription,
+                   "--resource-type", "ms-graph")["accessToken"]
     graph = Graph(token)
     try:
         organizations = graph.items("organization", **{"$select": "id"})
@@ -226,16 +284,24 @@ def apply(cfg: Settings, values: dict, env_file: Path) -> None:
             path = Path(folder) / "parameters.json"
             private_write(path, json.dumps(params))
             name = f"mcp-{stage}-{int(time.time())}"
-            az.run("deployment", "sub", "validate", "--name", name, "--location", cfg.location,
-                   "--subscription", cfg.subscription, "--template-file", str(INFRA / "main.bicep"),
-                   "--parameters", f"@{path}")
+            preview = az.run(
+                "deployment", "sub", "what-if", "--name", name, "--location", cfg.location,
+                "--subscription", cfg.subscription, "--template-file", str(INFRA / "main.bicep"),
+                "--parameters", f"@{path}", "--result-format", "FullResourcePayloads", "--no-pretty-print",
+            )
+            print("What-if:", inspect_preview(preview, cfg.subscription, names["resourceGroupName"]))
+            resource_id = f"/subscriptions/{cfg.subscription}/providers/Microsoft.Resources/deployments/{name}"
+            portal = "https://portal.azure.com/#view/Microsoft_Azure_Resources/DeploymentDetails.MenuView/~/overview/id/" + quote(resource_id, safe="")
+            print(portal, flush=True)
+            if not webbrowser.open(portal):
+                print("Portal kon niet automatisch openen; gebruik de getoonde link.")
+            state.setdefault("deploymentNames", []).append(name)
+            private_write(state_file, json.dumps(state, indent=2))
             result = az.run("deployment", "sub", "create", "--name", name, "--location", cfg.location,
                             "--subscription", cfg.subscription, "--template-file", str(INFRA / "main.bicep"),
                             "--parameters", f"@{path}")
             if result["properties"].get("provisioningState") != "Succeeded":
                 raise RuntimeError("Azure rapporteert geen geslaagde deployment.")
-            state.setdefault("deploymentNames", []).append(name)
-            private_write(state_file, json.dumps(state, indent=2))
             return {key: item["value"] for key, item in result["properties"]["outputs"].items()}
 
     if state.get("builtImage") and exists:
@@ -252,11 +318,12 @@ def apply(cfg: Settings, values: dict, env_file: Path) -> None:
     with tempfile.TemporaryDirectory(prefix="build-", dir=state_dir) as folder:
         stage_build(Path(folder))
         az.run("acr", "build", "--registry", names["registryName"], "--image", tag,
-               "--file", "Dockerfile", "--no-logs", "--subscription", cfg.subscription,
+               "--file", str(Path(folder) / "Dockerfile"), "--no-logs", "--subscription", cfg.subscription,
                folder, json_output=False)
     image = f"{outputs['registryLoginServer']}/{tag}"
     state["builtImage"] = image
     private_write(state_file, json.dumps(state, indent=2))
+    seed_vault(az, cfg, apps["secret"])
     print("4/5 Echt image en Key Vault-reference activeren.")
     outputs = deploy(image, "apps")
     expected_gateway = "https://" + outputs["gatewayActualFqdn"] + "/mcp"

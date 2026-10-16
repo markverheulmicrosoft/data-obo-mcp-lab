@@ -2,10 +2,6 @@ param name string
 param location string
 param tags object
 param tenantId string
-param writeSecret bool
-
-@secure()
-param gatewayClientSecret string
 
 resource vault 'Microsoft.KeyVault/vaults@2026-05-15' = {
   name: name
@@ -21,14 +17,10 @@ resource vault 'Microsoft.KeyVault/vaults@2026-05-15' = {
   }
 }
 
-resource gatewaySecret 'Microsoft.KeyVault/vaults/secrets@2026-05-15' = if (writeSecret) {
+resource gatewaySecret 'Microsoft.KeyVault/vaults/secrets@2026-05-15' existing = {
   parent: vault
   name: 'gateway-client-secret'
-  tags: tags
-  properties: {
-    value: gatewayClientSecret
-  }
 }
 
 output name string = vault.name
-output secretUri string = '${vault.properties.vaultUri}secrets/gateway-client-secret'
+output secretUri string = '${vault.properties.vaultUri}secrets/${gatewaySecret.name}'

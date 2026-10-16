@@ -144,8 +144,9 @@ logs niet langer dan nodig. Gebruik geen echte bedrijfsdata in deze proef.
 ## Live deployment
 
 De gebruiker heeft Zava aangewezen; toegang en beheerrechten zijn read-only
-bevestigd. De publieke hosting en appregistraties zijn nog niet aangemaakt.
-De uitvoerbare deploymentcode staat in `infra\`; zie `infra\README.md`.
+bevestigd. De Entra-apps en Azure-basis zijn aangemaakt, maar de MCP-applicaties
+zijn nog niet volledig uitgerold. Key Vault-netwerkbeleid blokkeert de huidige
+lokale secret-route. De deploymentcode staat in `infra\`; zie `infra\README.md`.
 Die leest een private `.env` en voert pas met `--apply` wijzigingen uit.
 De servers gebruiken lokaal standaard loopback en poort 8000/8001.
 `HOST` en `PORT` kunnen per proces worden ingesteld; containerhosting gebruikt

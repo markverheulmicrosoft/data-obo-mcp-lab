@@ -1,7 +1,9 @@
 # Lokaal deployen met een private .env
 
-**Status: deploymentcode, nog niet live uitgevoerd.** De bestaande lokale
-MCP-tests staan los van een echte Entra-/Azure-deployment.
+**Status: basisinfrastructuur en imagebouw zijn in Azure uitgevoerd; de eigen
+MCP-diensten zijn nog niet live geverifieerd.** De huidige secret-route kan
+door Key Vault-netwerkbeleid worden geblokkeerd. Het script zet dat beleid
+niet uit. De lokale MCP-tests zijn geen bewijs van echte Entra/OBO.
 
 ## Eenmalig
 
@@ -20,8 +22,9 @@ een beheerlogin, niet een van de testgebruikers.
 
 `main.parameters.json` is alleen een leesbaar voorbeeld met dummy-identiteiten.
 De deploy gebruikt **eigen tijdelijke parameters uit jouw `.env`**, niet dat
-voorbeeldbestand. Secrets gaan alleen in beveiligde tijdelijke parameters en
-Key Vault, nooit als commandlinewaarde.
+voorbeeldbestand. Parameterbestanden bevatten geen secrets. Het app-secret
+gaat vanuit het geheugen via de Key Vault-API naar de vault, nooit als
+commandlinewaarde of tijdelijk secretbestand.
 
 ## Plan bekijken
 
@@ -50,7 +53,9 @@ Het script doet vijf dingen:
    bestaande echte app niet teruggezet naar zo'n placeholder.
 3. Bouwt een image via ACR uit een strikte allowlist: de vijf Python-modules,
    `requirements.txt` en de Docker-buildbestanden.
-4. Deployt het echte image. Alleen de gateway wordt publiek; Rights MCP blijft
+4. Slaat het secret via de Key Vault-API op en deployt het echte image.
+   Voor iedere deployment wordt what-if gecontroleerd; Delete of een ander
+   resourcegroepscope stopt de uitvoering. Alleen de gateway wordt publiek; Rights MCP blijft
    intern. Het gateway-secret komt uit Key Vault, alleen leesbaar door de
    gateway-identiteit.
 5. Controleert publieke discoverymetadata en een 401 voor een anonieme MCP-call.

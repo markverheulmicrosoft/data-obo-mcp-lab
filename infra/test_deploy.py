@@ -67,18 +67,19 @@ class DeploymentTests(unittest.TestCase):
                 if args[:2] == ("acr", "show"):
                     return outputs["registryLoginServer"]
                 if args[:2] == ("acr", "build"):
+                    self.assertEqual(Path(args[args.index("--file") + 1]), Path(args[-1]) / "Dockerfile")
                     return None
                 if args[:2] == ("deployment", "sub"):
                     path = Path(args[args.index("--parameters") + 1][1:])
                     parameter_files.append(path)
                     parameters = json.loads(path.read_text())["parameters"]
-                    if args[2] == "validate":
-                        return {}
+                    if args[2] == "what-if":
+                        return {"status": "Succeeded", "changes": [{
+                            "resourceId": f"/subscriptions/{SUB}/resourceGroups/{names['resourceGroupName']}",
+                            "changeType": "Create",
+                        }]}
                     images.append(parameters["containerImage"]["value"])
-                    if images[-1] == deploy.PLACEHOLDER:
-                        self.assertNotIn("gatewayClientSecret", parameters)
-                    else:
-                        self.assertEqual(parameters["gatewayClientSecret"]["value"], "test-only-secret")
+                    self.assertNotIn("gatewayClientSecret", parameters)
                     return {"properties": {"provisioningState": "Succeeded", "outputs": {
                         key: {"value": value} for key, value in outputs.items()
                     }}}
@@ -99,12 +100,15 @@ class DeploymentTests(unittest.TestCase):
                 deploy, "Graph", return_value=graph
             ), patch.object(deploy, "bootstrap", side_effect=identities), patch.object(
                 deploy, "stage_build"
+            ), patch.object(deploy, "seed_vault") as seed, patch.object(
+                deploy.webbrowser, "open", return_value=True
             ), patch.object(deploy, "smoke") as smoke, contextlib.redirect_stdout(io.StringIO()) as output:
                 deploy.apply(cfg, inputs, env)
                 deploy.apply(cfg, inputs, env)
             self.assertEqual(images.count(deploy.PLACEHOLDER), 1)
             self.assertEqual(len(images), 3)
             self.assertEqual(smoke.call_count, 2)
+            self.assertEqual(seed.call_count, 2)
             self.assertTrue(all(not path.exists() for path in parameter_files))
             self.assertNotIn("test-only-secret", state_file.read_text())
             self.assertNotIn("test-only-secret", output.getvalue())
@@ -144,7 +148,7 @@ class DeploymentTests(unittest.TestCase):
             self.assertEqual({p.relative_to(target).as_posix() for p in target.rglob("*") if p.is_file()}, expected)
             self.assertNotIn("DO_NOT_UPLOAD", "".join(p.read_text() for p in target.rglob("*") if p.is_file()))
 
-    def test_secret_only_enters_secure_final_parameters(self):
+    def test_secret_never_enters_arm_parameter_files(self):
         cfg = deploy.Settings.load(values())
         state = {"sessionId": TENANT, "createdAt": "2026-01-01T00:00:00Z"}
         operator = {"displayName": "Example operator", "id": NORTH}
@@ -152,8 +156,35 @@ class DeploymentTests(unittest.TestCase):
         first = deploy.arm_parameters(cfg, state, operator, apps, deploy.PLACEHOLDER)
         final = deploy.arm_parameters(cfg, state, operator, apps, "example.azurecr.io/mcp-lab:1")
         self.assertNotIn("gatewayClientSecret", first["parameters"])
-        self.assertEqual(final["parameters"]["gatewayClientSecret"]["value"], "test-only-secret")
+        self.assertNotIn("gatewayClientSecret", final["parameters"])
+        self.assertNotIn("test-only-secret", json.dumps(final))
         self.assertEqual(final["parameters"]["gatewayClientId"]["value"], GATEWAY)
+
+    def test_preview_blocks_deletes_and_other_resource_groups(self):
+        scope = f"/subscriptions/{SUB}/resourceGroups/rg-example"
+        valid = {"status": "Succeeded", "changes": [{"resourceId": scope, "changeType": "Create"}]}
+        self.assertEqual(deploy.inspect_preview(valid, SUB, "rg-example"), {"Create": 1})
+        for change in [{"resourceId": scope, "changeType": "Delete"},
+                       {"resourceId": scope + "-other", "changeType": "Create"}]:
+            with self.assertRaises(RuntimeError):
+                deploy.inspect_preview({"status": "Succeeded", "changes": [change]}, SUB, "rg-example")
+        with self.assertRaises(RuntimeError):
+            deploy.inspect_preview({"status": "Failed", "changes": []}, SUB, "rg-example")
+
+    def test_unresolved_rbac_id_is_allowed_only_inside_the_target_scope(self):
+        scope = f"/subscriptions/{SUB}/resourceGroups/rg-example"
+        def result(base):
+            return {"status": "Succeeded", "changes": [{
+                "resourceId": f"[extensionResourceId('{base}/providers/Microsoft.ContainerRegistry/registries/example', 'Microsoft.Authorization/roleAssignments', guid('pending-principal'))]",
+                "changeType": "Unsupported",
+            }]}
+        self.assertEqual(deploy.inspect_preview(result(scope), SUB, "rg-example"), {"Unsupported": 1})
+        with self.assertRaises(RuntimeError):
+            deploy.inspect_preview(result(scope + "-other"), SUB, "rg-example")
+        with self.assertRaises(RuntimeError):
+            deploy.inspect_preview({"status": "Succeeded", "changes": [{
+                "resourceId": "[concat('unknown')]", "changeType": "Unsupported",
+            }]}, SUB, "rg-example")
 
     def test_default_plan_does_not_call_azure_or_graph(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -214,6 +245,21 @@ class DeploymentTests(unittest.TestCase):
         client = httpx2.Client(transport=httpx2.MockTransport(response))
         with patch.object(deploy.httpx2, "Client", return_value=client):
             deploy.smoke(url, TENANT, GATEWAY)
+
+    def test_network_policy_block_is_not_retried_as_rbac_delay(self):
+        requests = []
+        def response(request):
+            requests.append(request.method)
+            return httpx2.Response(403, json={"error": {
+                "code": "Forbidden", "innererror": {"code": "ForbiddenByConnection"},
+            }})
+        client = httpx2.Client(transport=httpx2.MockTransport(response))
+        az = Mock()
+        az.run.return_value = {"accessToken": "test-only-token"}
+        with patch.object(deploy.httpx2, "Client", return_value=client), patch.object(deploy.time, "sleep"):
+            with self.assertRaisesRegex(RuntimeError, "ForbiddenByConnection"):
+                deploy.seed_vault(az, deploy.Settings.load(values()), "test-only-secret")
+        self.assertEqual(requests, ["GET"])
 
 
 class IdentityTests(unittest.TestCase):

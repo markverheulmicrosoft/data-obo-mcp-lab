@@ -21,10 +21,6 @@ param gatewayClientId string
 param rightsClientId string
 param containerImage string = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
 
-@secure()
-param gatewayClientSecret string = ''
-
-var isPlaceholder = containerImage == 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
 var tags = {
   'app-onboard-skill': 'true'
   'app-onboard-session-id': sessionId
@@ -65,8 +61,6 @@ module vault './modules/key-vault.bicep' = {
     location: location
     tags: tags
     tenantId: tenantId
-    writeSecret: !isPlaceholder
-    gatewayClientSecret: gatewayClientSecret
   }
 }
 

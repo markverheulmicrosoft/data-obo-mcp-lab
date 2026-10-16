@@ -7,7 +7,8 @@ meerdere databronnen en verschillende gebruikersrechten.
 De twee MCP-endpoints, JWT-validatie en onafhankelijke rechtencontrole werken in
 lokale HTTP-tests. De echte Entra-login/OBO-code is aanwezig, maar nog niet met
 echte appregistraties uitgevoerd. Fabric, Databricks en Microsoft 365 zijn nog
-niet aangesloten. Er zijn geen cloudresources aangemaakt of rechten gewijzigd.
+niet aangesloten. De eerste Azure-basis en Entra-labapps zijn aangemaakt;
+de eigen image is gebouwd, maar de live MCP/OBO-proef is nog niet afgerond.
 De Foundry-voorbereidingscheck heeft lokaal ontbrekende `azd`-extensies geinstalleerd;
 deze zijn niet nodig voor de simulator.
 
@@ -28,7 +29,8 @@ De browserdemo hieronder is de eerdere conceptsimulator, niet deze MCP-server.
 
 De deploymentbestanden staan in **`infra\`**. Zie **`infra\README.md`** voor de
 korte route met een private `.env`: eerst het doel tonen, daarna expliciet
-`python infra\deploy.py --apply`. Er is nog geen live deployment uitgevoerd.
+`python infra\deploy.py --apply`. De basisdeployment is uitgevoerd; in deze
+tenant blokkeert netwerkbeleid de huidige publieke Key Vault-secretroute.
 
 ## Nieuwe richting: MCP in het midden
 
