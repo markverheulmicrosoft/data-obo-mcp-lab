@@ -17,13 +17,19 @@ en meld aan met een van de twee toegewezen testaccounts, niet met de beheerder.
 De browser gebruikt Entra authorization code + PKCE. De aparte SPA-app heeft
 alleen een exacte HTTPS `/auth.html`-redirect, geen clientsecret.
 
-De webapp toont uitleg en verwachte uitkomsten naast echte toolresultaten,
-tijdstip, duur, bronidentiteit uit SQL `USER_NAME()` en de JSON-response.
+De webapp begint met drie stappen: **aanmelden, orders of marges kiezen, ander
+account proberen**. Account en tools worden automatisch na aanmelden gecontroleerd.
+Je ziet de verwachting naast het echte resultaat. Techniek, tijdstip, duur,
+bronidentiteit uit SQL `USER_NAME()` en JSON staan achter **Waarom dit resultaat?**.
+De twee aanvullende proeven en uitleg staan achter **Extra controles en uitleg**.
 Een architectuurpijl betekent niet dat die stap succesvol is uitgevoerd.
 Alleen een ontvangen resultaat of expliciete fout telt als waarneming.
 Bij afmelden/accountwisseling worden eerdere resultaten gewist.
 
 ## De vier experimenten
+
+Orders en marges zijn de twee hoofdknoppen. Identiteit en de extra gatewaycheck
+blijven beschikbaar onder de ingeklapte extra controles.
 
 | Experiment | Noord-account | Finance-account | Wie beslist? |
 |---|---|---|---|
@@ -37,6 +43,31 @@ Een timeout, ontbrekende consent of onbereikbare bron is nooit bewijs van een
 correcte rechtenweigering. Een gebruiker zonder labrol kan identiteit inspecteren,
 maar geen datatool uitvoeren. De gateway-app vereist daarnaast een toegewezen
 Entra-applicatierol voordat Entra een gebruikerstoken uitgeeft.
+
+## Wat voegt een Teams-agent toe?
+
+De webclient test nu rechtstreeks de MCP en bronrechten, zonder LLM. Een
+Teams-agent is de volgende gebruikersproef, niet een vervanging van bronautorisatie:
+persoonlijke Teams-chat -> agent met gebruikersaanmelding -> dezelfde MCP ->
+OBO -> Fabric. De botidentiteit alleen is geen bewijs van de eindgebruiker.
+De agent moet een delegated token voor de gateway verkrijgen, geen Teams-token
+met een verkeerde audience doorgeven en geen gebruikers-ID uit prompttekst vertrouwen.
+
+Voor meerdere kanalen past de Microsoft 365 Agents SDK; voor Teams-only is
+de Teams SDK een alternatief. De SDK is geen gehoste AI-dienst: een eigen agent
+wordt gehost in Azure en kan een Foundry-model gebruiken. De oude Bot Framework
+SDK wordt niet meer onderhouden; nieuwe code moet daarop niet gebaseerd worden.
+Deze Teams-koppeling is nog niet gebouwd of getest.
+
+Begin met twee afzonderlijke **1-op-1-chats** en dezelfde vragen: orders, marges,
+en een expliciet verzoek om toch verboden data te tonen. Vergelijk de ontvangen
+bronresultaten/rechten, niet de exacte antwoordformulering van het model.
+Gesprekscontext en tokens moeten per gebruiker gescheiden zijn. Een kanaalantwoord
+is leesbaar voor anderen en is dus geen veilige eerste proef voor persoonlijke data.
+
+Bronnen: [Agents SDK](https://learn.microsoft.com/microsoft-365/agents-sdk/agents-sdk-overview),
+[Teams-gebruikersauthenticatie](https://learn.microsoft.com/microsoftteams/platform/teams-sdk/in-depth-guides/user-authentication),
+[Bot Framework lifecycle](https://learn.microsoft.com/azure/bot-service/bot-builder-howto-add-media-attachments?view=azure-bot-service-4.0).
 
 ## Data rechtstreeks in Fabric bekijken
 

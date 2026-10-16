@@ -4,7 +4,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport, StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { CfWorkerJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/cfworker";
 import {
-  EXPERIMENTS, LabError, classifyResult, compareOutcome, expectedOutcome,
+  EXPERIMENTS, LabError, classifyResult, compareOutcome, compactExpected, expectedOutcome,
   isAdminSession, redact, resultData, safeErrorCode, safeSourceUrl,
   validAccessData, validTableData, validateConfig,
 } from "./presentation.mjs";
@@ -16,7 +16,7 @@ const state = {
   sessionVersion: 0, closeActive: null,
 };
 const statusLabels = {
-  idle: "Nog geen aanroep", busy: "Aanroep loopt", info: "Informatie ontvangen",
+  idle: "Nog niet getest", busy: "Even ophalen…", info: "Account gecontroleerd",
   allowed: "Data ontvangen", denied: "Weigering waargenomen",
   blocked: "Niet bevestigd", action: "Actie nodig",
 };
@@ -49,7 +49,8 @@ function updateControls() {
   }
   $("admin-account").disabled = !state.account || state.busy;
   for (const button of document.querySelectorAll("[data-run]")) {
-    button.disabled = !state.account || !state.ready || state.busy;
+    button.disabled = !state.account || !state.ready || state.busy ||
+      (button.dataset.run !== "discovery" && !state.access);
   }
   for (const button of document.querySelectorAll("#history-list button")) button.disabled = state.busy;
   $("result-panel").setAttribute("aria-busy", String(state.busy));
@@ -59,8 +60,8 @@ function renderIdentity() {
   const account = state.account;
   $("account-name").textContent = account ? redact(account.name || account.username || "Aangemelde gebruiker") : "Nog niet aangemeld";
   $("account-detail").textContent = account
-    ? redact(account.username || "Microsoft-account aangemeld; vraag de gateway-identiteit op met experiment 1.")
-    : "Meld aan met een North- of Finance-testaccount, niet met een beheeraccount.";
+    ? redact(account.username || "Microsoft-account aangemeld.")
+    : "Gebruik een testaccount, niet het beheeraccount.";
   $("account-icon").textContent = account ? "✓" : "?";
   $("gateway-user").textContent = redact(state.access?.user.id ?? "Nog niet opgehaald");
   $("gateway-roles").textContent = state.access
@@ -79,20 +80,23 @@ function renderIdentity() {
   if (url) $("source-link").href = url;
   else $("source-link").removeAttribute("href");
   $("source-link-description").textContent = url
-    ? "Deze itemlink komt uit de geauthenticeerde describe_access-respons. Een link is geen bewijs dat je het item of alle tabellen mag lezen."
+    ? "Vergelijk in de SQL-editor als hetzelfde account."
     : state.access
-      ? "De gateway heeft geen geldige Fabric-itemlink teruggegeven. Er wordt geen URL geraden."
-      : "De echte Fabric-itemlink verschijnt pas na aanmelden én een geslaagde describe_access-aanroep. We verzinnen geen bron-URL.";
+      ? "Geen bruikbare Fabric-bronlink ontvangen."
+      : "De bronlink verschijnt na aanmelden.";
+  const roles = state.access?.user.roles;
+  const admin = isAdminSession(roles, state.admin);
+  for (const key of ["orders", "margins"]) {
+    $(`expected-${key}`).textContent = `Verwacht voor jou: ${compactExpected(EXPERIMENTS[key].tool, roles, admin)}`;
+  }
   updateControls();
 }
 
 function renderEmpty(message) {
   const empty = node("div", undefined, "empty-state");
-  empty.append(node("div", "↗", "empty-symbol"), node("h3", "Nog geen bewijs in deze sessie"));
-  empty.append(node("p", message || "Meld aan en voer een experiment uit. Alleen werkelijk ontvangen antwoorden verschijnen hier."));
-  empty.append(node("p", "Verwachtingen zijn geen resultaten. Er is geen fallback naar voorbeelddata.", "small"));
+  empty.append(node("p", message || "Kies orders of marges. Hier verschijnt het echte resultaat."));
   $("result-body").replaceChildren(empty);
-  $("result-title").textContent = "De waarneming";
+  $("result-title").textContent = "Jouw resultaat";
   $("history").hidden = true;
   $("history-list").replaceChildren();
   status("idle");
@@ -110,7 +114,7 @@ function clearSessionView() {
   $("admin-account").checked = false;
   state.msal?.setActiveAccount(null);
   renderIdentity();
-  renderEmpty("De vorige identiteit en alle gegevens zijn gewist. Meld opnieuw aan om een nieuwe, echte waarneming te doen.");
+  renderEmpty("Vorige resultaten gewist. Meld aan om opnieuw te testen.");
 }
 
 async function clearTokenCache() {
@@ -171,14 +175,14 @@ async function login() {
     state.account = response.account;
     state.msal.setActiveAccount(response.account);
     renderIdentity();
-    notice("Microsoft-aanmelding geslaagd. Voer experiment 1 uit: de gateway-identiteit en bronrechten zijn nog niet gecontroleerd.", "success");
-    renderEmpty("Je bent aangemeld. Begin met experiment 1 om de gateway-identiteit en aangeboden tools op te halen.");
+    notice("Aangemeld. Je account bij de gateway controleren…");
   } catch (error) {
     await authFailure(error);
   } finally {
     state.busy = false;
     updateControls();
   }
+  if (state.account && state.ready) await runExperiment("discovery", { setup: true });
 }
 
 async function logout() {
@@ -302,7 +306,7 @@ function classifyRequestError(error) {
   };
 }
 
-async function runExperiment(key) {
+async function runExperiment(key, { setup = false } = {}) {
   if (state.busy || !state.account || !EXPERIMENTS[key]) return;
   state.busy = true;
   state.authLost = false;
@@ -327,10 +331,9 @@ async function runExperiment(key) {
   status("busy");
   $("result-title").textContent = experiment.title;
   const pending = node("div", undefined, "empty-state");
-  pending.append(node("h3", "Echte aanroep wordt uitgevoerd"));
-  pending.append(node("p", "Token ophalen, MCP verbinden en de aanvraag versturen. Er wordt nog geen uitkomst aangenomen."));
+  pending.append(node("p", setup ? "Je account controleren…" : "Je aanvraag wordt uitgevoerd…"));
   $("result-body").replaceChildren(pending);
-  notice(`${experiment.title} gestart om ${timeFormat.format(started)}. Accountkeuze en andere aanroepen zijn tijdelijk geblokkeerd.`);
+  notice(setup ? "Je account controleren…" : `${experiment.title} ophalen…`);
 
   const measure = async (label, action) => {
     const operation = { label, started: new Date(), elapsed: 0, received: false };
@@ -415,12 +418,15 @@ async function runExperiment(key) {
   state.records = state.records.slice(0, 12);
   state.selected = record.id;
   renderIdentity();
-  renderRecord(record);
+  const accessReady = setup && record.outcome.code === "ACCESS_DESCRIBED";
+  if (accessReady) renderEmpty("Kies orders of marges. Toegang tot de data is nog niet getest.");
+  else renderRecord(record);
   renderHistory();
   const kind = record.outcome.status === "allowed" ? "success" : record.outcome.status === "blocked" ? "warning" : "info";
   notice(cleanup.code
     ? `Aanroep afgerond, maar het sluiten van de verbinding is niet bevestigd (${cleanup.code}). Heropen het lab voor een volgende test.`
-    : `${experiment.title}: ${record.outcome.title}. ${record.outcome.code}. Vergelijk de verwachting met de waarneming.`, cleanup.code ? "warning" : kind);
+    : accessReady ? "Aangemeld. Kies orders of marges."
+      : `${experiment.title}: ${record.outcome.title}.`, cleanup.code ? "warning" : kind);
 }
 
 function fact(list, label, value, full = false) {
@@ -470,14 +476,15 @@ function renderRecord(record) {
   const body = document.createDocumentFragment();
   const grid = node("div", undefined, "evidence-grid");
   const expected = node("section", undefined, "evidence");
-  expected.append(node("p", "Verwacht · initiële inrichting", "eyebrow"));
-  expected.append(node("p", expectedOutcome(experiment.tool, record.roles, admin)));
+  expected.append(node("p", "Verwacht", "eyebrow"));
+  expected.append(node("p", compactExpected(experiment.tool, record.roles, admin)));
   const actual = node("section", undefined, "evidence actual");
-  actual.append(node("p", "Werkelijk · ontvangen respons", "eyebrow"));
-  actual.append(node("h4", record.outcome.title), node("p", record.outcome.explanation));
+  actual.append(node("p", "Werkelijk", "eyebrow"));
+  actual.append(node("h4", record.outcome.title));
   grid.append(expected, actual);
   body.append(grid);
-  body.append(node("p", compareOutcome(experiment.tool, record.roles, record.outcome, record.data, admin), "comparison"));
+  const comparison = compareOutcome(experiment.tool, record.roles, record.outcome, record.data, admin);
+  body.append(node("p", comparison.split(". ")[0], "comparison"));
   if (admin) body.append(node("p", "Beheeraccount: deze waarneming is uitgesloten als bewijs voor beperkte gebruikersrechten. Gebruik een apart testaccount.", "notice"));
   const facts = node("dl", undefined, "facts");
   fact(facts, "Gestart · lokale tijd", dateFormat.format(record.started));
@@ -491,11 +498,17 @@ function renderRecord(record) {
   }
   if (record.data?.authentication) fact(facts, "Authenticatie · zoals de tool retourneert", record.data.authentication);
   if (record.data?.source) fact(facts, "Bron · zoals de tool retourneert", record.data.source);
-  body.append(facts);
+  const technical = node("details", undefined, "result-details");
+  technical.append(node("summary", "Waarom dit resultaat?"));
+  const explanation = node("div", undefined, "details-body");
+  explanation.append(node("p", record.outcome.explanation));
+  explanation.append(node("p", expectedOutcome(experiment.tool, record.roles, admin)));
+  explanation.append(node("p", comparison), facts);
+  technical.append(explanation);
   if (record.notDiscovered) body.append(node("p", "Deze tool stond niet in de laatst ontvangen discoverylijst. De knop heeft toch een echte directe aanroep verstuurd.", "notice"));
   if (record.key === "discovery") {
     if (record.tools) {
-      body.append(node("h4", `${record.tools.length} aangeboden tools`));
+      explanation.append(node("h4", `${record.tools.length} aangeboden tools`));
       const list = node("ul", undefined, "tools-list");
       for (const tool of record.tools) {
         const item = node("li");
@@ -503,8 +516,8 @@ function renderRecord(record) {
         if (tool.description) item.append(node("p", tool.description));
         list.append(item);
       }
-      body.append(list);
-      if (!record.tools.length) body.append(node("p", "De gateway retourneerde een lege toollijst.", "small muted"));
+      explanation.append(list);
+      if (!record.tools.length) explanation.append(node("p", "De gateway retourneerde een lege toollijst.", "small muted"));
     }
     const source = record.data?.sources?.find((item) => item?.id === "fabric");
     if (source) {
@@ -513,7 +526,7 @@ function renderRecord(record) {
       fact(sourceFacts, "Type · ontvangen", source.kind ?? "Niet geretourneerd");
       fact(sourceFacts, "Datakarakter · ontvangen", source.dataKind ?? "Niet geretourneerd");
       fact(sourceFacts, "Handhaving · ontvangen", source.enforcement ?? "Niet geretourneerd", true);
-      body.append(sourceFacts);
+      explanation.append(sourceFacts);
     }
   } else if (record.data) appendDataTable(body, record.data);
   if (record.operations.length) {
@@ -530,14 +543,15 @@ function renderRecord(record) {
       list.append(item);
     }
     details.append(list);
-    body.append(details);
+    explanation.append(details);
   }
   if (record.raw) {
     const details = node("details");
     details.append(node("summary", "Ruwe JSON-respons · gevoelige velden afgeschermd"));
     details.append(node("pre", JSON.stringify(record.raw, null, 2)));
-    body.append(details);
+    explanation.append(details);
   }
+  body.append(technical);
   $("result-body").replaceChildren(body);
 }
 
@@ -588,7 +602,7 @@ async function initialize() {
     });
     await state.msal.initialize();
     state.ready = true;
-    notice("Client gereed. Meld aan met een echt testaccount. De bronconfiguratie en toegang zijn nog niet gecontroleerd.");
+    notice("Klaar. Meld aan om te beginnen.");
   } catch (error) {
     state.ready = false;
     notice(`De client kan niet starten (${safeErrorCode(error, "CLIENT_INITIALIZATION_FAILED")}). Controleer /lab-config.json, HTTPS en de same-origin /mcp-configuratie; herlaad daarna de pagina. Er worden geen gesimuleerde resultaten getoond.`, "error");
@@ -606,6 +620,7 @@ $("theme-toggle").addEventListener("click", () => {
 $("admin-account").addEventListener("change", () => {
   state.admin = $("admin-account").checked;
   if (state.admin) for (const record of state.records) record.admin = true;
+  renderIdentity();
   const selected = state.records.find((record) => record.id === state.selected);
   if (selected) renderRecord(selected);
   notice(state.admin

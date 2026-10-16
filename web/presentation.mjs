@@ -1,8 +1,8 @@
 export const EXPERIMENTS = Object.freeze({
-  discovery: { title: "Ontdek identiteit & tools", tool: "describe_access" },
-  orders: { title: "Bekijk orders met RLS", tool: "fabric_orders" },
-  margins: { title: "Test de bronmachtiging", tool: "fabric_margins" },
-  finance: { title: "Test de gatewayrol", tool: "fabric_finance_only" },
+  discovery: { title: "Account en tools", tool: "describe_access" },
+  orders: { title: "Mijn orders", tool: "fabric_orders" },
+  margins: { title: "Marges", tool: "fabric_margins" },
+  finance: { title: "Extra gatewaycontrole", tool: "fabric_finance_only" },
 });
 
 export const LAB_ROLES = Object.freeze({ north: "North.Reader", finance: "Finance.Reader" });
@@ -84,6 +84,17 @@ export function redact(value, depth = 0) {
 
 export function isAdminSession(roles, marked = false) {
   return marked || (Array.isArray(roles) && roles.some((role) => /admin|owner|beheer/i.test(role)));
+}
+
+export function compactExpected(tool, roles, admin = false) {
+  if (admin) return "Beheeraccount: niet geschikt voor deze vergelijking.";
+  if (!Array.isArray(roles)) return "Nog onbekend: meld aan om je account te controleren.";
+  if (tool === "describe_access") return "Je account en rollen volgens de gateway.";
+  const finance = roles.includes(LAB_ROLES.finance);
+  if (!finance && !roles.includes(LAB_ROLES.north)) return "Geen toegang: dit account heeft geen labrol.";
+  if (tool === "fabric_orders") return finance ? "6 orders: Noord en Zuid." : "3 orders uit Noord.";
+  if (tool === "fabric_margins") return finance ? "6 margeregels." : "Geen toegang: Fabric hoort te weigeren.";
+  return finance ? "6 margeregels, na beide controles." : "Geen toegang: de gateway hoort te weigeren.";
 }
 
 export function expectedOutcome(tool, roles, admin = false) {

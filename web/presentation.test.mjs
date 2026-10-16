@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import {
-  classifyResult, compareOutcome, expectedOutcome, isAdminSession, redact,
+  classifyResult, compareOutcome, compactExpected, expectedOutcome, isAdminSession, redact,
   safeErrorCode, safeSourceUrl, validateConfig, validAccessData, validTableData,
 } from "./presentation.mjs";
 
@@ -96,6 +96,32 @@ test("unknown roles, absent identity and administrator sessions never imply user
   assert.match(compareOutcome("fabric_orders", ["Finance.Reader"], { status: "allowed" }, table([]), true), /Uitgesloten/);
   assert.match(compareOutcome("describe_access", ["North.Reader"], { code: "SOURCE_NOT_CONFIGURED" }, null), /niet bevestigd/);
   assert.match(compareOutcome("describe_access", null, { code: "DESCRIBE_ACCESS_MISSING" }, null), /niet bevestigd/);
+});
+
+test("simple expectations use verified roles without asserting an observed result", () => {
+  assert.match(compactExpected("fabric_orders", null), /Nog onbekend/);
+  assert.match(compactExpected("fabric_orders", ["North.Reader"]), /^3 orders uit Noord/);
+  assert.match(compactExpected("fabric_orders", ["Finance.Reader"]), /^6 orders/);
+  assert.match(compactExpected("fabric_margins", ["North.Reader"]), /Fabric hoort te weigeren/);
+  assert.match(compactExpected("fabric_finance_only", ["North.Reader"]), /gateway hoort te weigeren/);
+  assert.match(compactExpected("fabric_margins", ["Finance.Reader"]), /^6 margeregels/);
+  assert.match(compactExpected("fabric_orders", []), /geen labrol/);
+  assert.match(compactExpected("fabric_orders", ["Finance.Reader"], true), /Beheeraccount/);
+});
+
+test("default screen has only two questions; extra controls are collapsed", async () => {
+  const template = await readFile(new URL("./index.html", import.meta.url), "utf8");
+  const [primary, advanced] = template.split('<details class="advanced section" id="advanced">');
+  assert.ok(advanced, "Advanced controls must live in a closed native disclosure");
+  assert.deepEqual([...primary.matchAll(/data-run="([^"]+)"/g)].map((match) => match[1]), ["orders", "margins"]);
+  assert.deepEqual([...advanced.matchAll(/data-run="([^"]+)"/g)].map((match) => match[1]), ["discovery", "finance"]);
+  assert.doesNotMatch(template, /<details[^>]*\bopen\b/);
+  assert.match(primary, /nog geen chatagent/);
+  assert.match(primary, /Jouw resultaat/);
+  const app = await readFile(new URL("./app.mjs", import.meta.url), "utf8");
+  assert.match(app, /if \(state\.account && state\.ready\) await runExperiment\("discovery", \{ setup: true \}\)/);
+  assert.match(app, /button\.dataset\.run !== "discovery" && !state\.access/);
+  assert.match(app, /node\("summary", "Waarom dit resultaat\?"\)/);
 });
 
 test("raw responses redact secrets and auth messages expose only bounded codes", () => {
