@@ -71,6 +71,49 @@ class FabricDriverTests(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaisesRegex(ToolError, expected):
                     backend.query("orders", "user-token")
 
+    def test_native_sql_denial_without_numeric_code_is_not_a_connectivity_error(self):
+        error = mssql_python.ProgrammingError(
+            "Syntax error or access violation",
+            "[Microsoft][SQL Server]The SELECT permission was denied on the object "
+            "'Margins', database 'example', schema 'dbo'.",
+        )
+        backend = FabricWarehouse(self.settings, AsyncMock())
+        with patch("mcp_lab.fabric.mssql_python.connect") as connect:
+            cursor = connect.return_value.cursor.return_value
+            cursor.fetchone.return_value = ("source-user",)
+            cursor.execute.side_effect = [None, error]
+            with self.assertRaisesRegex(ToolError, "^SOURCE_FORBIDDEN:"):
+                backend.query("margins", "user-token")
+
+    def test_generic_programming_errors_do_not_count_as_authorization_denials(self):
+        backend = FabricWarehouse(self.settings, AsyncMock())
+        for detail in (
+            "[Microsoft][SQL Server]Incorrect syntax near 'Margins'.",
+            "[Microsoft][SQL Server]Invalid object name 'The SELECT permission was denied on the object'.",
+            "[Microsoft][SQL Server]EXECUTE AS is not supported.",
+            "Syntax error or access violation",
+        ):
+            with self.subTest(detail=detail), patch(
+                "mcp_lab.fabric.mssql_python.connect",
+                side_effect=mssql_python.ProgrammingError("Syntax error or access violation", detail),
+            ):
+                with self.assertRaisesRegex(ToolError, "^SOURCE_UNAVAILABLE:"):
+                    backend.query("margins", "user-token")
+
+    def test_fabric_external_policy_denial_without_numeric_code_is_recognized(self):
+        error = mssql_python.ProgrammingError(
+            "Syntax error or access violation",
+            "[Microsoft][SQL Server]The SELECT permission or external policy action "
+            "'example/read' was denied on the object 'Margins', database 'example', schema 'dbo'.",
+        )
+        backend = FabricWarehouse(self.settings, AsyncMock())
+        with patch("mcp_lab.fabric.mssql_python.connect") as connect:
+            cursor = connect.return_value.cursor.return_value
+            cursor.fetchone.return_value = ("source-user",)
+            cursor.execute.side_effect = [None, error]
+            with self.assertRaisesRegex(ToolError, "^SOURCE_FORBIDDEN:"):
+                backend.query("margins", "user-token")
+
     def test_gateway_and_source_gates_are_distinct(self):
         north = SimpleNamespace(claims={"roles": ["North.Reader"]})
         empty = SimpleNamespace(claims={"roles": []})
@@ -158,6 +201,28 @@ class LiveWebNetworkTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("SOURCE_FORBIDDEN", result.model_dump_json())
         self.assertNotIn("source-row", result.model_dump_json())
         self.sql_exchange.assert_awaited_once()
+
+    async def test_native_permission_error_reaches_browser_as_explicit_source_denial(self):
+        self.query.side_effect = lambda kind, token: FabricWarehouse.query(self.backend, kind, token)
+        with patch("mcp_lab.fabric.mssql_python.connect") as connect:
+            cursor = connect.return_value.cursor.return_value
+            cursor.fetchone.return_value = ("source-user",)
+            cursor.execute.side_effect = [
+                None,
+                mssql_python.ProgrammingError(
+                    "Syntax error or access violation",
+                    "[Microsoft][SQL Server]The SELECT permission or external policy action "
+                    "'example/read' was denied on the object "
+                    "'Margins', database 'example', schema 'dbo'.",
+                ),
+            ]
+            result = await self.call(self.token(self.gateway_endpoint), "fabric_margins")
+            self.assertTrue(result.is_error)
+            self.assertIn("SOURCE_FORBIDDEN", result.model_dump_json())
+            self.assertNotIn("SOURCE_UNAVAILABLE", result.model_dump_json())
+            self.assertNotIn("'Margins'", result.model_dump_json())
+            self.sql_exchange.assert_awaited_once()
+            connect.return_value.close.assert_called_once()
 
     async def test_obo_failure_never_opens_sql_connection(self):
         self.sql_exchange.side_effect = ToolError("OBO_FAILED")

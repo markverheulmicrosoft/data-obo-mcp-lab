@@ -10,6 +10,13 @@ geen productiedata. De twee oude in-memory orders van de Rights Test MCP zijn
 een afzonderlijke controlegroep; ze worden nooit als Fabric-resultaat gebruikt.
 Databricks is op verzoek uitgesteld tot na deze Fabric-proef.
 
+**Live waarneming (16 oktober 2026):** het Noord-account ontvangt 3 Noord-orders,
+Fabric weigert zijn margesaanroep en de extra gatewaycontrole stopt vooraf.
+Het Finance-account ontvangt 6 orders en 6 margeregels. Browserresultaten zijn
+gecontroleerd en Fabric-queryhistorie bevestigt de afzonderlijke gebruikers,
+rijaantallen en native fout 229 voor de geweigerde marges. Dit bewijst deze
+baseline, niet onmiddellijke intrekking of ondersteuning van andere clients.
+
 ## Openen en aanmelden
 
 Open de root-URL van je uitgerolde gateway, dus zonder `/mcp`. Kies **Aanmelden**
@@ -43,6 +50,12 @@ Een timeout, ontbrekende consent of onbereikbare bron is nooit bewijs van een
 correcte rechtenweigering. Een gebruiker zonder labrol kan identiteit inspecteren,
 maar geen datatool uitvoeren. De gateway-app vereist daarnaast een toegewezen
 Entra-applicatierol voordat Entra een gebruikerstoken uitgeeft.
+
+Een expliciete SQL SELECT-weigering wordt `SOURCE_FORBIDDEN`, ook wanneer de
+driver het native foutnummer niet doorgeeft. Andere SQL-/verbindingsfouten
+blijven een mislukte bronaanroep zonder rechtenconclusie; "mislukt" betekent
+niet automatisch "de bron is onbereikbaar". De gateway logt alleen een vaste
+diagnosecategorie, geen ruwe SQL-fouttekst of tokens.
 
 ## Wat voegt een Teams-agent toe?
 
@@ -171,5 +184,5 @@ De Azure-container gebruikt MI-federatie en delegated SQL-consent; nooit de
 beheerlogin of een SQL-serviceprincipal als fallback.
 
 Zie `live-bronnen.md` voor primaire bronnen en productbeperkingen. Een geslaagde
-uitrol en broninrichting bewijzen nog niet de volledige browser/OBO-keten:
-voer daarvoor beide echte gebruikersproeven uit.
+uitrol alleen bewijst geen browser/OBO-keten: herhaal beide gebruikersproeven
+na wijzigingen aan identiteit, consent, bronrechten of de queryroute.

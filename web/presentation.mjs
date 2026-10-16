@@ -137,8 +137,8 @@ const errors = {
     explanation: "De tokenuitwisseling is mislukt. Controleer consent, appconfiguratie en delegatie met de beheerder en meld opnieuw aan. Dit is géén bewijs van een bronweigering.",
   },
   SOURCE_UNAVAILABLE: {
-    status: "blocked", layer: "Bronverbinding", title: "De bron is niet bereikbaar",
-    explanation: "De query kon niet betrouwbaar worden uitgevoerd. Controleer de Warehouse-beschikbaarheid en verbinding. Geen uitspraak over toegangsrechten.",
+    status: "blocked", layer: "Bronaanroep", title: "De bronaanroep is mislukt",
+    explanation: "Fabric SQL gaf een niet-geclassificeerde fout. Dit bewijst geen rechtenweigering of netwerkstoring. Controleer de bronaanroep; de oorzaak staat nog niet vast.",
   },
   SOURCE_NOT_CONFIGURED: {
     status: "blocked", layer: "Bronconfiguratie", title: "Fabric is nog niet geconfigureerd",

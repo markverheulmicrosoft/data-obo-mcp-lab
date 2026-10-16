@@ -53,6 +53,9 @@ test("consent, unavailability and missing config never pass as authorization den
   assert.equal(classifyResult("fabric_margins", toolError("unknown")).code, "TOOL_ERROR");
   assert.equal(classifyResult("fabric_margins", toolError("SOURCE_FORBIDDEN TOOL_FORBIDDEN")).code, "TOOL_ERROR");
   assert.equal(classifyResult("fabric_margins", toolError("NOT_SOURCE_FORBIDDEN")).code, "TOOL_ERROR");
+  const unknown = classifyResult("fabric_margins", toolError("SOURCE_UNAVAILABLE"));
+  assert.equal(unknown.title, "De bronaanroep is mislukt");
+  assert.match(unknown.explanation, /oorzaak staat nog niet vast/);
 });
 
 test("unstructured or synthetic results cannot be presented as genuine Fabric success", () => {

@@ -4,8 +4,9 @@
 De publieke gateway heeft correcte discoverymetadata en weigert anonieme toegang;
 Rights MCP blijft intern. De cloudroute gebruikt de bestaande managed identity
 als federated clientcredential, zonder runtime-app-secret. Het Key Vault-
-netwerkbeleid blijft intact. **Echte login/OBO met de twee testgebruikers is
-nog niet bewezen.**
+netwerkbeleid blijft intact. **De gerichte browser/OBO/Fabric-baseline met twee
+testgebruikers is live uitgevoerd.** Dat geldt voor de geteste orders-, marges-
+en gatewaycontrole; niet automatisch voor andere tools of clients.
 
 ## Eenmalig
 

@@ -99,15 +99,37 @@ class FabricWarehouse:
                         for row in cursor.fetchmany(100)
                     ]
         except mssql_python.Error as error:
-            # Only classify explicit SQL authorization errors, not arbitrary transport failures.
             detail = str(error)
-            denied = bool(re.search(r"\((229|230|916|18456)\)", detail))
+            numbered_denial = bool(re.search(r"\((229|230|916|18456)\)", detail))
+            native_message = getattr(error, "ddbc_error", "")
+            # DDBC can omit native error numbers; SQLSTATE 42000 alone also includes syntax errors.
+            native_select_denial = (
+                isinstance(error, mssql_python.ProgrammingError)
+                and isinstance(native_message, str)
+                and bool(re.match(
+                    r"^(?:\[Microsoft\])?(?:\[ODBC Driver [^\]]+\])?(?:\[SQL Server\])?"
+                    r"The SELECT permission(?: or external policy action '[^']+')? "
+                    r"was denied on the (?:object|column)\b",
+                    native_message,
+                ))
+            )
+            denied = numbered_denial or native_select_denial
             code = "SOURCE_FORBIDDEN" if denied else "SOURCE_UNAVAILABLE"
-            logger.warning("fabric=failed query=%s code=%s type=%s", kind, code, type(error).__name__)
-            raise ToolError(
-                f"{code}: Fabric SQL heeft de aanvraag geweigerd of kon deze niet uitvoeren. "
-                "Controleer item Read, SQL SELECT en bronbeschikbaarheid; geen alternatieve identiteit gebruikt."
-            ) from None
+            diagnostic = (
+                "native_select_denied" if native_select_denial else
+                "numbered_access_denied" if numbered_denial else "unclassified_sql_error"
+            )
+            logger.warning(
+                "fabric=failed query=%s code=%s type=%s diagnostic=%s",
+                kind, code, type(error).__name__, diagnostic,
+            )
+            message = (
+                "Fabric SQL weigert deze toegang. Controleer item Read en SQL SELECT/DENY."
+                if denied else
+                "De Fabric SQL-aanroep is mislukt; de oorzaak is niet vastgesteld. "
+                "Dit bewijst geen rechtenweigering of netwerkstoring."
+            )
+            raise ToolError(f"{code}: {message} Geen alternatieve identiteit gebruikt.") from None
         return {
             "source": "fabric-warehouse", "columns": columns, "rows": rows,
             "source_principal": principal, "authentication": "delegated-obo",

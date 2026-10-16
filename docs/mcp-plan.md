@@ -1,9 +1,10 @@
 # MCP als centrale toegangslaag - ontwerp en echte proef
 
 **Status: gateway, Rights Test MCP en referentieclient zijn geimplementeerd.**
-Zie [bouwen.md](bouwen.md) voor de werkende lokale proef en de nog benodigde
-echte Entra-proef. Beide MCP-apps draaien in Azure; discovery en anonieme weigering
-zijn live gecontroleerd. De twee-gebruikers/OBO-proef staat nog open.
+Zie [bouwen.md](bouwen.md) voor de lokale controleproef en de echte Entra-route.
+Beide MCP-apps draaien in Azure; discovery en anonieme weigering zijn live
+gecontroleerd. De Fabric Warehouse-baseline met twee gebruikers is live uitgevoerd;
+Noord en Finance krijgen de verwachte verschillende bronresultaten.
 De 3P-routes blijven ontwerp.
 De live webclient en de eerste echte bronroute staan in [weblab.md](weblab.md):
 MCP-gateway -> gedelegeerd SQL-token -> Fabric Warehouse met opgeslagen mockdata,

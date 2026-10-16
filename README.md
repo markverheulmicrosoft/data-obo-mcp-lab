@@ -13,8 +13,11 @@ De twee MCP-endpoints, JWT-validatie en onafhankelijke rechtencontrole werken in
 lokale HTTP-tests. Beide MCP-apps zijn in Azure uitgerold: een publieke
 HTTPS-gateway en een interne testbron, met gezonde actieve revisies.
 Entra-apps en managed-identity-federatie zijn ingericht; discovery en anonieme
-weigering zijn live gecontroleerd. **De echte twee-gebruikers/OBO-proef staat
-nog open.** De nieuwe Fabric-route gebruikt een echt Warehouse met opgeslagen
+weigering zijn live gecontroleerd. **De gerichte Fabric/OBO-baseline met twee
+gebruikers is live uitgevoerd:** Noord krijgt 3 orders en geen marges, Finance
+krijgt 6 orders en 6 margeregels. De extra gatewaycheck weigert Noord ook vooraf.
+Dit is bewijs voor deze tools en inrichting, niet voor alle mogelijke bronroutes.
+De nieuwe Fabric-route gebruikt een echt Warehouse met opgeslagen
 mockdata en SQL-RLS, geen productiedata. Databricks is bewust uitgesteld;
 Microsoft 365/Copilot en Scout zijn nog niet aangesloten.
 De Foundry-voorbereidingscheck heeft lokaal ontbrekende `azd`-extensies geinstalleerd;

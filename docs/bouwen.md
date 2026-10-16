@@ -152,8 +152,11 @@ logs niet langer dan nodig. Gebruik geen echte bedrijfsdata in deze proef.
 
 De Entra-apps, Azure-basis en beide MCP-applicaties zijn uitgerold. De actieve
 revisies zijn gezond; de gateway is publiek via HTTPS, Rights MCP alleen intern.
-Discovery en anonieme weigering zijn live gecontroleerd, maar de echte
-twee-gebruikers/OBO-proef staat nog open. De cloudroute gebruikt managed-identity-
+Discovery en anonieme weigering zijn live gecontroleerd. De nieuwe
+Fabric Warehouse-route is met twee echte gebruikers uitgevoerd: Noord ziet
+3 orders en krijgt geen marges; Finance ziet 6 orders en 6 margeregels.
+Dit is niet hetzelfde als een live bewijs voor iedere oudere custom-MCP-tool.
+De cloudroute gebruikt managed-identity-
 federatie, zodat geen toegang tot de afgeschermde Key Vault nodig is.
 De deploymentcode staat in `infra\`; zie `infra\README.md`.
 Die leest een private `.env` en voert pas met `--apply` wijzigingen uit.
