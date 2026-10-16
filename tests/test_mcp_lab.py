@@ -17,7 +17,7 @@ from mcp.client.streamable_http import streamable_http_client
 from mcp.server.mcpserver.exceptions import ToolError
 
 from mcp_lab.auth import Endpoint, EntraVerifier
-from mcp_lab.gateway import EntraOBO, create_gateway
+from mcp_lab.gateway import EntraOBO, create_gateway, managed_identity_assertion
 from mcp_lab.rights_mcp import create_rights_mcp
 
 TENANT = "11111111-1111-4111-8111-111111111111"
@@ -311,6 +311,32 @@ class ConfigurationAndOBOTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaisesRegex(ToolError, "OBO_FAILED"):
                 await exchange("test-incoming-assertion")
             factory.return_value.acquire_token_for_client.assert_not_called()
+
+    async def test_managed_identity_is_only_client_auth_and_preserves_user_obo(self):
+        with patch("mcp_lab.gateway.msal.ManagedIdentityClient") as identity, patch(
+            "mcp_lab.gateway.msal.ConfidentialClientApplication"
+        ) as factory:
+            identity.return_value.acquire_token_for_client.return_value = {"access_token": "workload-assertion"}
+            exchange = EntraOBO(self.gateway, self.rights, managed_identity_client_id=CLIENT_ID)
+            credential = factory.call_args.kwargs["client_credential"]
+            self.assertTrue(callable(credential["client_assertion"]))
+            self.assertEqual(credential["client_assertion"](), "workload-assertion")
+            identity.return_value.acquire_token_for_client.assert_called_with(resource="api://AzureADTokenExchange")
+            factory.return_value.acquire_token_on_behalf_of.return_value = {"access_token": "delegated-rights-token"}
+            self.assertEqual(await exchange("original-user-token"), "delegated-rights-token")
+            factory.return_value.acquire_token_on_behalf_of.assert_called_once_with(
+                user_assertion="original-user-token", scopes=[f"api://{RIGHTS_ID}/.default"],
+            )
+            factory.return_value.acquire_token_for_client.assert_not_called()
+
+    def test_managed_identity_failure_has_no_secret_fallback(self):
+        with patch("mcp_lab.gateway.msal.ManagedIdentityClient") as identity:
+            identity.return_value.acquire_token_for_client.return_value = {"error": "identity_unavailable"}
+            callback = managed_identity_assertion(CLIENT_ID)
+            with self.assertRaisesRegex(ToolError, "CLIENT_ASSERTION_FAILED"):
+                callback()
+        with self.assertRaises(ValueError):
+            EntraOBO(self.gateway, self.rights, "secret", managed_identity_client_id=CLIENT_ID)
 
     def test_same_audience_is_a_configuration_error(self):
         with self.assertRaises(ValueError):

@@ -92,11 +92,15 @@ Er zijn drie appregistraties in dezelfde testtenant nodig:
 Beide API's moeten v2-access-tokens uitgeven (`api.requestedAccessTokenVersion: 2`).
 De gateway-app vraagt delegated toegang tot de Rights API en krijgt daarvoor
 de benodigde consent. De gateway gebruikt een confidential-clientcredential
-voor OBO. De referentieclient gebruikt interactieve login met PKCE, geen wachtwoordflow.
+voor OBO. In Azure is dat een federated assertion van de gateway-managed identity;
+lokaal kan dat een app-secret zijn. De referentieclient gebruikt interactieve
+login met PKCE, geen wachtwoordflow.
 
 Kopieer `.env.example` naar `.env` en vul tenant- en app-ID's in. Het
-gateway-secret hoort alleen lokaal in `.env` of in de secretconfiguratie van
-de hostingomgeving; nooit in Git, chat, commandlineargumenten of logs.
+gateway-secret hoort bij deze lokale start alleen in `.env`; nooit in Git,
+chat, commandlineargumenten of logs. De standaardmodus is `secret`.
+De Azure-deployment gebruikt expliciet `GATEWAY_CREDENTIAL_MODE=managed-identity`
+en `GATEWAY_MANAGED_IDENTITY_CLIENT_ID`, zonder secretfallback.
 Deze app start niet zonder de vereiste configuratie en heeft geen anonieme fallback.
 
 Start in afzonderlijke terminals, vanuit de projectmap:
@@ -143,10 +147,12 @@ logs niet langer dan nodig. Gebruik geen echte bedrijfsdata in deze proef.
 
 ## Live deployment
 
-De gebruiker heeft Zava aangewezen; toegang en beheerrechten zijn read-only
-bevestigd. De Entra-apps en Azure-basis zijn aangemaakt, maar de MCP-applicaties
-zijn nog niet volledig uitgerold. Key Vault-netwerkbeleid blokkeert de huidige
-lokale secret-route. De deploymentcode staat in `infra\`; zie `infra\README.md`.
+De Entra-apps, Azure-basis en beide MCP-applicaties zijn uitgerold. De actieve
+revisies zijn gezond; de gateway is publiek via HTTPS, Rights MCP alleen intern.
+Discovery en anonieme weigering zijn live gecontroleerd, maar de echte
+twee-gebruikers/OBO-proef staat nog open. De cloudroute gebruikt managed-identity-
+federatie, zodat geen toegang tot de afgeschermde Key Vault nodig is.
+De deploymentcode staat in `infra\`; zie `infra\README.md`.
 Die leest een private `.env` en voert pas met `--apply` wijzigingen uit.
 De servers gebruiken lokaal standaard loopback en poort 8000/8001.
 `HOST` en `PORT` kunnen per proces worden ingesteld; containerhosting gebruikt
@@ -154,8 +160,16 @@ expliciet `HOST=0.0.0.0`. Zet geen gedeelde `PORT` in de lokale `.env` als beide
 servers tegelijk draaien. `GATEWAY_URL` en `RIGHTS_URL` zijn de daadwerkelijke
 MCP-URL's voor discovery en bronverkeer, niet de luisterinterface.
 
+De managed identity haalt een assertion voor `api://AzureADTokenExchange` op.
+Een federated credential op de gateway-app vertrouwt uitsluitend die identity.
+Dat vervangt alleen de clientcredential: de OBO-aanvraag bevat nog steeds het
+inkomende gebruikerstoken, en de Rights MCP past haar eigen gebruikersrollen toe.
+Een MI-token wordt nooit rechtstreeks als datatoken naar de testbron gestuurd.
+
 ## Bronnen voor de implementatie
 
 - [Python MCP SDK: resource-serverauthenticatie](https://py.sdk.modelcontextprotocol.io/run/authorization/)
 - [Python MCP SDK: HTTP-clienttransport](https://py.sdk.modelcontextprotocol.io/client/transports/)
 - [MSAL Python: tokens verwerven, inclusief OBO](https://learn.microsoft.com/en-us/entra/msal/python/getting-started/acquiring-tokens)
+- [Entra: app trust met een managed identity](https://learn.microsoft.com/en-us/entra/workload-id/workload-identity-federation-config-app-trust-managed-identity)
+- [MSAL Python: managed identities](https://learn.microsoft.com/en-us/entra/msal/python/advanced/managed-identity)

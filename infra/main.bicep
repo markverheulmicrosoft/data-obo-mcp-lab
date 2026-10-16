@@ -112,8 +112,8 @@ module rights './modules/container-app.bicep' = {
     tags: tags
     environmentId: appEnvironment.outputs.id
     identityId: rightsIdentity.outputs.id
+    managedIdentityClientId: rightsIdentity.outputs.clientId
     registryServer: registry.outputs.loginServer
-    secretUri: vault.outputs.secretUri
     containerImage: containerImage
     tenantId: tenantId
     gatewayClientId: gatewayClientId
@@ -134,8 +134,8 @@ module gateway './modules/container-app.bicep' = {
     tags: tags
     environmentId: appEnvironment.outputs.id
     identityId: gatewayIdentity.outputs.id
+    managedIdentityClientId: gatewayIdentity.outputs.clientId
     registryServer: registry.outputs.loginServer
-    secretUri: vault.outputs.secretUri
     containerImage: containerImage
     tenantId: tenantId
     gatewayClientId: gatewayClientId

@@ -2,7 +2,9 @@
 
 **Status: gateway, Rights Test MCP en referentieclient zijn geimplementeerd.**
 Zie [bouwen.md](bouwen.md) voor de werkende lokale proef en de nog benodigde
-echte Entra-configuratie. De 3P-routes en publieke deployment zijn nog ontwerp.
+echte Entra-proef. Beide MCP-apps draaien in Azure; discovery en anonieme weigering
+zijn live gecontroleerd. De twee-gebruikers/OBO-proef staat nog open.
+De 3P-routes blijven ontwerp.
 De offline browserdemo is geen bewijs voor deze opzet en wordt hiervoor niet uitgebreid.
 Productondersteuning en primaire bronnen staan in [mcp-onderzoek.md](mcp-onderzoek.md).
 Dit document legt vast wat onze eigen implementatie moet afdwingen.
@@ -132,7 +134,7 @@ en accountwissel. Een werkende referentieclient bewijst niet dat Scout hetzelfde
 
 ### Midden: onze remote MCP-server
 
-Het beoogde endpoint heet in ons ontwerp `/mcp`; dit is nog geen bestaande URL.
+Het endpoint gebruikt `/mcp`; de eigen URL volgt uit de deploymentconfiguratie.
 De implementatie krijgt vier verantwoordelijkheden:
 
 1. **Valideren:** handtekening via vertrouwde sleutels, issuer/tenant, audience,

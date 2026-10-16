@@ -19,7 +19,7 @@ from urllib.parse import quote
 import httpx2
 from dotenv import dotenv_values, set_key
 
-from entra import Graph, bootstrap
+from entra import Graph, bootstrap, ensure_managed_identity_federation
 
 ROOT = Path(__file__).resolve().parent.parent
 INFRA = ROOT / "infra"
@@ -273,7 +273,7 @@ def apply(cfg: Settings, values: dict, env_file: Path) -> None:
             raise RuntimeError("Gebruik voor deployment de beheerlogin, niet een testaccount.")
         apps = bootstrap(
             graph, cfg.prefix, cfg.north_user, cfg.finance_user, values, save, recover_secret,
-            owner_id=operator["id"],
+            owner_id=operator["id"], need_secret=False,
         )
     finally:
         graph.close()
@@ -313,6 +313,21 @@ def apply(cfg: Settings, values: dict, env_file: Path) -> None:
     else:
         print("2/5 Azure-infrastructuur en RBAC; tijdelijke apps blijven intern.")
         outputs = deploy(PLACEHOLDER, "bootstrap")
+    identity = az.run(
+        "identity", "show", "--name", names["gatewayIdentityName"],
+        "--resource-group", names["resourceGroupName"], "--subscription", cfg.subscription,
+    )
+    if identity["tenantId"] != cfg.tenant or identity["name"] != names["gatewayIdentityName"]:
+        raise RuntimeError("De gateway-managed identity hoort niet bij het bedoelde doel.")
+    token = az.run("account", "get-access-token", "--subscription", cfg.subscription,
+                   "--resource-type", "ms-graph")["accessToken"]
+    graph = Graph(token)
+    try:
+        ensure_managed_identity_federation(
+            graph, apps["gatewayObjectId"], apps["gateway"], operator["id"], cfg.tenant, identity["principalId"],
+        )
+    finally:
+        graph.close()
     print("3/5 Alleen Python-broncode bouwen in ACR; geen .env of credentials in het pakket.")
     tag = f"mcp-lab:{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
     with tempfile.TemporaryDirectory(prefix="build-", dir=state_dir) as folder:
@@ -323,8 +338,7 @@ def apply(cfg: Settings, values: dict, env_file: Path) -> None:
     image = f"{outputs['registryLoginServer']}/{tag}"
     state["builtImage"] = image
     private_write(state_file, json.dumps(state, indent=2))
-    seed_vault(az, cfg, apps["secret"])
-    print("4/5 Echt image en Key Vault-reference activeren.")
+    print("4/5 Echt image en secretloze gateway-clientauthenticatie activeren.")
     outputs = deploy(image, "apps")
     expected_gateway = "https://" + outputs["gatewayActualFqdn"] + "/mcp"
     expected_rights = "https://" + outputs["rightsActualFqdn"] + "/mcp"

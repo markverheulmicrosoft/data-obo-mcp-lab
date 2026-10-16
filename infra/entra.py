@@ -186,7 +186,8 @@ def ensure_role(graph: Graph, principal: dict, user_id: str, role_id: str) -> No
 
 
 def bootstrap(
-    graph: Graph, prefix: str, north_id: str, finance_id: str, values: dict, save, recover_secret, *, owner_id: str
+    graph: Graph, prefix: str, north_id: str, finance_id: str, values: dict, save, recover_secret, *,
+    owner_id: str, need_secret: bool = True,
 ) -> dict:
     if values.get("GATEWAY_CLIENT_SECRET") and not values.get("GATEWAY_CLIENT_ID"):
         raise ValueError("Een bestaand secret vereist het bijbehorende GATEWAY_CLIENT_ID.")
@@ -221,6 +222,11 @@ def bootstrap(
             ensure_role(graph, principal, user_id, stable_id(prefix, f"{kind}/{role}"))
     ensure_grant(graph, gateway_sp, rights_sp)
     ensure_grant(graph, client_sp, gateway_sp)
+    if not need_secret:
+        return {
+            "gateway": gateway["appId"], "rights": rights["appId"], "client": client["appId"],
+            "gatewayObjectId": gateway["id"],
+        }
 
     existing_secret = values.get("GATEWAY_CLIENT_SECRET", "")
     credentials = graph.request("GET", f"applications/{gateway['id']}", params={"$select": "passwordCredentials"}).get(
@@ -248,3 +254,27 @@ def bootstrap(
             existing_secret = credential["secretText"]
         save({"GATEWAY_CLIENT_SECRET": existing_secret})
     return {"gateway": gateway["appId"], "rights": rights["appId"], "client": client["appId"], "secret": existing_secret}
+
+
+def ensure_managed_identity_federation(
+    graph: Graph, app_object_id: str, app_id: str, owner_id: str, tenant: str, principal_id: str,
+) -> None:
+    for value in (app_object_id, app_id, owner_id, tenant, principal_id):
+        UUID(value)
+    app = graph.request("GET", f"applications/{app_object_id}", params={"$select": "appId"})
+    owners = graph.items(f"applications/{app_object_id}/owners", **{"$select": "id"})
+    if app["appId"] != app_id or {owner["id"] for owner in owners} != {owner_id}:
+        raise RuntimeError("Federatie vereist het vastgelegde app-ID en uitsluitend de vertrouwde eigenaar.")
+    desired = {
+        "name": "gateway-managed-identity",
+        "issuer": f"https://login.microsoftonline.com/{tenant}/v2.0",
+        "subject": principal_id,
+        "audiences": ["api://AzureADTokenExchange"],
+    }
+    path = f"applications/{app_object_id}/federatedIdentityCredentials"
+    existing = graph.items(path)
+    if existing:
+        if len(existing) != 1 or any(existing[0].get(key) != value for key, value in desired.items()):
+            raise RuntimeError("Bestaande federated credential wijkt af; niet automatisch wijzigen.")
+        return
+    graph.request("POST", path, body=desired)

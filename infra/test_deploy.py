@@ -11,7 +11,10 @@ from unittest.mock import Mock, patch
 import httpx2
 
 import deploy
-from entra import Graph, api_definition, bootstrap, ensure_app, ensure_grant, ensure_role, stable_id
+from entra import (
+    Graph, api_definition, bootstrap, ensure_app, ensure_grant,
+    ensure_managed_identity_federation, ensure_role, stable_id,
+)
 
 TENANT = "11111111-1111-4111-8111-111111111111"
 SUB = "22222222-2222-4222-8222-222222222222"
@@ -69,6 +72,9 @@ class DeploymentTests(unittest.TestCase):
                 if args[:2] == ("acr", "build"):
                     self.assertEqual(Path(args[args.index("--file") + 1]), Path(args[-1]) / "Dockerfile")
                     return None
+                if args[:2] == ("identity", "show"):
+                    return {"tenantId": TENANT, "name": names["gatewayIdentityName"],
+                            "principalId": "88888888-8888-4888-8888-888888888888"}
                 if args[:2] == ("deployment", "sub"):
                     path = Path(args[args.index("--parameters") + 1][1:])
                     parameter_files.append(path)
@@ -90,17 +96,20 @@ class DeploymentTests(unittest.TestCase):
             graph.items.return_value = [{"id": TENANT}]
             graph.request.return_value = {"id": "77777777-7777-4777-8777-777777777777", "displayName": "Example"}
 
-            def identities(graph, prefix, north, finance, data, save, recover, *, owner_id):
+            def identities(graph, prefix, north, finance, data, save, recover, *, owner_id, need_secret):
                 self.assertEqual(owner_id, "77777777-7777-4777-8777-777777777777")
+                self.assertFalse(need_secret)
                 save({"GATEWAY_CLIENT_ID": GATEWAY, "RIGHTS_CLIENT_ID": RIGHTS,
                       "GATEWAY_CLIENT_SECRET": "test-only-secret"})
-                return {"gateway": GATEWAY, "rights": RIGHTS, "secret": "test-only-secret"}
+                return {"gateway": GATEWAY, "rights": RIGHTS, "gatewayObjectId": GATEWAY}
 
             with patch.object(deploy, "ROOT", root), patch.object(deploy, "Azure", return_value=fake), patch.object(
                 deploy, "Graph", return_value=graph
             ), patch.object(deploy, "bootstrap", side_effect=identities), patch.object(
                 deploy, "stage_build"
             ), patch.object(deploy, "seed_vault") as seed, patch.object(
+                deploy, "ensure_managed_identity_federation"
+            ) as federation, patch.object(
                 deploy.webbrowser, "open", return_value=True
             ), patch.object(deploy, "smoke") as smoke, contextlib.redirect_stdout(io.StringIO()) as output:
                 deploy.apply(cfg, inputs, env)
@@ -108,7 +117,8 @@ class DeploymentTests(unittest.TestCase):
             self.assertEqual(images.count(deploy.PLACEHOLDER), 1)
             self.assertEqual(len(images), 3)
             self.assertEqual(smoke.call_count, 2)
-            self.assertEqual(seed.call_count, 2)
+            self.assertEqual(seed.call_count, 0)
+            self.assertEqual(federation.call_count, 2)
             self.assertTrue(all(not path.exists() for path in parameter_files))
             self.assertNotIn("test-only-secret", state_file.read_text())
             self.assertNotIn("test-only-secret", output.getvalue())
@@ -263,6 +273,29 @@ class DeploymentTests(unittest.TestCase):
 
 
 class IdentityTests(unittest.TestCase):
+    def test_federation_binds_only_the_expected_managed_identity(self):
+        graph = Mock()
+        graph.request.return_value = {"appId": GATEWAY}
+        graph.items.side_effect = [[{"id": FINANCE}], []]
+        ensure_managed_identity_federation(graph, NORTH, GATEWAY, FINANCE, TENANT, RIGHTS)
+        graph.request.assert_any_call("POST", f"applications/{NORTH}/federatedIdentityCredentials", body={
+            "name": "gateway-managed-identity",
+            "issuer": f"https://login.microsoftonline.com/{TENANT}/v2.0",
+            "subject": RIGHTS,
+            "audiences": ["api://AzureADTokenExchange"],
+        })
+
+    def test_federation_does_not_overwrite_another_trust(self):
+        graph = Mock()
+        graph.request.return_value = {"appId": GATEWAY}
+        graph.items.side_effect = [[{"id": FINANCE}], [{
+            "name": "gateway-managed-identity", "issuer": "https://other.invalid",
+            "subject": NORTH, "audiences": ["other"],
+        }]]
+        with self.assertRaisesRegex(RuntimeError, "federated credential wijkt af"):
+            ensure_managed_identity_federation(graph, NORTH, GATEWAY, FINANCE, TENANT, RIGHTS)
+        self.assertTrue(all(call.args[0] == "GET" for call in graph.request.call_args_list))
+
     def client_fixture(self):
         return {
             "id": NORTH, "appId": GATEWAY, "displayName": f"{PREFIX}-client",

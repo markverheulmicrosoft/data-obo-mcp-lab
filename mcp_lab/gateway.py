@@ -4,9 +4,11 @@ import asyncio
 import logging
 import os
 from collections.abc import Awaitable, Callable
+from uuid import UUID
 
 import httpx2
 import msal
+import requests
 import uvicorn
 from dotenv import load_dotenv
 from mcp import Client, MCPError
@@ -20,17 +22,44 @@ from mcp_lab.auth import Endpoint, EntraVerifier, ProtectedMCP, caller, required
 logger = logging.getLogger("velora")
 
 
+def managed_identity_assertion(client_id: str) -> Callable[[], str]:
+    identity = msal.ManagedIdentityClient(
+        msal.UserAssignedManagedIdentity(client_id=str(UUID(client_id))),
+        http_client=requests.Session(),
+    )
+
+    def acquire() -> str:
+        # Dit bewijst alleen de gateway-identiteit; het is geen token voor de data-API.
+        result = identity.acquire_token_for_client(resource="api://AzureADTokenExchange")
+        token = result.get("access_token")
+        if not isinstance(token, str) or not token:
+            logger.warning("client_assertion=failed code=%s", result.get("error", "missing_token"))
+            raise ToolError("CLIENT_ASSERTION_FAILED: managed identity kon de gateway niet aanmelden.")
+        return token
+
+    return acquire
+
+
 class EntraOBO:
-    def __init__(self, gateway: Endpoint, rights: Endpoint, secret: str):
+    def __init__(
+        self, gateway: Endpoint, rights: Endpoint, secret: str | None = None, *,
+        managed_identity_client_id: str | None = None,
+    ):
         if gateway.client_id == rights.client_id:
             raise ValueError("Gateway en Rights Test MCP moeten verschillende app-ID's hebben.")
         if gateway.tenant != rights.tenant:
             raise ValueError("Deze kleine proef ondersteunt alleen dezelfde Entra-tenant.")
+        if bool(secret) == bool(managed_identity_client_id):
+            raise ValueError("Kies precies een gateway-credential: secret of managed identity.")
+        credential = (
+            {"client_assertion": managed_identity_assertion(managed_identity_client_id)}
+            if managed_identity_client_id else secret
+        )
         self.scope = f"api://{rights.client_id}/.default"
         self.app = msal.ConfidentialClientApplication(
             gateway.client_id,
             authority=f"https://login.microsoftonline.com/{gateway.tenant}",
-            client_credential=secret,
+            client_credential=credential,
         )
 
     async def __call__(self, assertion: str) -> str:
@@ -97,10 +126,19 @@ if __name__ == "__main__":
     logger.setLevel(logging.INFO)
     gateway = Endpoint.from_env("GATEWAY")
     rights = Endpoint.from_env("RIGHTS")
+    mode = os.environ.get("GATEWAY_CREDENTIAL_MODE", "secret")
+    if mode == "managed-identity":
+        exchange = EntraOBO(
+            gateway, rights, managed_identity_client_id=required_env("GATEWAY_MANAGED_IDENTITY_CLIENT_ID"),
+        )
+    elif mode == "secret":
+        exchange = EntraOBO(gateway, rights, required_env("GATEWAY_CLIENT_SECRET"))
+    else:
+        raise ValueError("GATEWAY_CREDENTIAL_MODE moet secret of managed-identity zijn.")
     app = create_gateway(
         gateway,
         EntraVerifier(gateway),
         rights,
-        EntraOBO(gateway, rights, required_env("GATEWAY_CLIENT_SECRET")),
+        exchange,
     ).http_app()
     uvicorn.run(app, host=os.environ.get("HOST", "127.0.0.1"), port=int(os.environ.get("PORT", "8000")))

@@ -17,10 +17,4 @@ resource vault 'Microsoft.KeyVault/vaults@2026-05-15' = {
   }
 }
 
-resource gatewaySecret 'Microsoft.KeyVault/vaults/secrets@2026-05-15' existing = {
-  parent: vault
-  name: 'gateway-client-secret'
-}
-
 output name string = vault.name
-output secretUri string = '${vault.properties.vaultUri}secrets/${gatewaySecret.name}'

@@ -1,9 +1,11 @@
 # Lokaal deployen met een private .env
 
-**Status: basisinfrastructuur en imagebouw zijn in Azure uitgevoerd; de eigen
-MCP-diensten zijn nog niet live geverifieerd.** De huidige secret-route kan
-door Key Vault-netwerkbeleid worden geblokkeerd. Het script zet dat beleid
-niet uit. De lokale MCP-tests zijn geen bewijs van echte Entra/OBO.
+**Status: beide eigen MCP-apps draaien in Azure met gezonde actieve revisies.**
+De publieke gateway heeft correcte discoverymetadata en weigert anonieme toegang;
+Rights MCP blijft intern. De cloudroute gebruikt de bestaande managed identity
+als federated clientcredential, zonder runtime-app-secret. Het Key Vault-
+netwerkbeleid blijft intact. **Echte login/OBO met de twee testgebruikers is
+nog niet bewezen.**
 
 ## Eenmalig
 
@@ -16,15 +18,14 @@ Copy-Item infra\.env.example .env
 ```
 
 Vul in `.env` de subscription, tenant, een unieke korte resourceprefix, regio
-en de object-ID's van twee bestaande testgebruikers in. Laat de app-ID's en
-het gateway-secret leeg: de deploy maakt die zelf. Gebruik voor deployment
+en de object-ID's van twee bestaande testgebruikers in. Laat de app-ID's
+leeg: de deploy maakt die zelf. Gebruik voor deployment
 een beheerlogin, niet een van de testgebruikers.
 
 `main.parameters.json` is alleen een leesbaar voorbeeld met dummy-identiteiten.
 De deploy gebruikt **eigen tijdelijke parameters uit jouw `.env`**, niet dat
-voorbeeldbestand. Parameterbestanden bevatten geen secrets. Het app-secret
-gaat vanuit het geheugen via de Key Vault-API naar de vault, nooit als
-commandlinewaarde of tijdelijk secretbestand.
+voorbeeldbestand. Parameterbestanden bevatten geen secrets. De cloudroute
+maakt geen app-secret en leest of schrijft geen Key Vault-secret.
 
 ## Plan bekijken
 
@@ -51,15 +52,22 @@ Het script doet vijf dingen:
 2. Deployt de Azure-basis en managed-identityrollen. Tijdelijke placeholder-apps
    blijven intern en krijgen geen secrets. Bij een gewone redeploy wordt een
    bestaande echte app niet teruggezet naar zo'n placeholder.
-3. Bouwt een image via ACR uit een strikte allowlist: de vijf Python-modules,
+3. Koppelt de gateway-managed identity aan uitsluitend de eigen gateway-app
+   via een federated identity credential. Bouwt een image via ACR uit een
+   strikte allowlist: de vijf Python-modules,
    `requirements.txt` en de Docker-buildbestanden.
-4. Slaat het secret via de Key Vault-API op en deployt het echte image.
+4. Deployt het echte image met expliciete managed-identity-clientauthenticatie.
    Voor iedere deployment wordt what-if gecontroleerd; Delete of een ander
    resourcegroepscope stopt de uitvoering. Alleen de gateway wordt publiek; Rights MCP blijft
-   intern. Het gateway-secret komt uit Key Vault, alleen leesbaar door de
-   gateway-identiteit.
+   intern. De bestaande vault blijft afgeschermd, maar is geen runtime-afhankelijkheid.
 5. Controleert publieke discoverymetadata en een 401 voor een anonieme MCP-call.
    De echte URL's worden in de private `.env` opgeslagen.
+
+**Managed identity vervangt niet de gebruiker.** Het MI-token heeft audience
+`api://AzureADTokenExchange` en bewijst alleen welke gateway-app de OBO-aanvraag
+doet. Het oorspronkelijke gebruikerstoken blijft de `user_assertion`; de
+Rights MCP ontvangt een afzonderlijk delegated token voor die gebruiker.
+Er is geen terugval naar een app-only datatoken of een clientsecret.
 
 ## Wat hiermee wel en niet is bewezen
 
@@ -92,8 +100,12 @@ bedoeld. De gateway benadert die binnen de Container Apps-omgeving.
   Bij onderbroken eerste inrichting kan expliciet herstel van een gecontroleerd
   app-ID nodig zijn; het script neemt geen app op naam over.
 - Afwijkende rollen/consent of een afwijkende resourcegroep worden geweigerd.
-- Secrets worden niet stilzwijgend geroteerd. Het gegenereerde app-secret is
-  90 dagen geldig. Bestaande credentials worden lokaal of uit Key Vault hergebruikt.
+- Een bestaande afwijkende federated credential wordt geweigerd, niet overschreven.
+  De MI-client-ID selecteert de runtime-identiteit; haar principal-ID is het
+  subject van de federated trust.
+- Eventuele secrets uit de eerdere lokale route worden niet gebruikt, verwijderd
+  of stilzwijgend geroteerd door de clouddeploy. Lokaal draaien met een eigen
+  app-secret blijft mogelijk; zie `docs\bouwen.md`.
 - CLI-fouten en een audittrail staan in de genegeerde `.deploy`-map. Het script
   claimt geen succes als een deployment, FQDN-controle of HTTP-controle faalt.
 - `.env`, `.deploy` en `.copilot-azure` blijven buiten Git. De image bevat geen

@@ -5,8 +5,8 @@ param location string
 param tags object
 param environmentId string
 param identityId string
+param managedIdentityClientId string
 param registryServer string
-param secretUri string
 param tenantId string
 param gatewayClientId string
 param rightsClientId string
@@ -27,9 +27,8 @@ var commonEnv = [
 var gatewayEnv = [
   { name: 'GATEWAY_CLIENT_ID', value: gatewayClientId }
   { name: 'GATEWAY_URL', value: gatewayUrl }
-]
-var secretEnv = [
-  { name: 'GATEWAY_CLIENT_SECRET', secretRef: 'gateway-client-secret' }
+  { name: 'GATEWAY_CREDENTIAL_MODE', value: 'managed-identity' }
+  { name: 'GATEWAY_MANAGED_IDENTITY_CLIENT_ID', value: managedIdentityClientId }
 ]
 
 resource app 'Microsoft.App/containerApps@2026-07-01' = {
@@ -52,11 +51,7 @@ resource app 'Microsoft.App/containerApps@2026-07-01' = {
         allowInsecure: false
       }
       registries: isPlaceholder ? [] : [{ server: registryServer, identity: identityId }]
-      secrets: isPlaceholder || !isGateway
-        ? []
-        : [
-            { name: 'gateway-client-secret', keyVaultUrl: secretUri, identity: identityId }
-          ]
+      secrets: []
     }
     template: {
       containers: [
@@ -64,7 +59,7 @@ resource app 'Microsoft.App/containerApps@2026-07-01' = {
           name: 'mcp'
           image: containerImage
           command: isPlaceholder ? [] : ['python', '-m', isGateway ? 'mcp_lab.gateway' : 'mcp_lab.rights_mcp']
-          env: isPlaceholder ? [] : concat(commonEnv, isGateway ? gatewayEnv : [], isGateway ? secretEnv : [])
+          env: isPlaceholder ? [] : concat(commonEnv, isGateway ? gatewayEnv : [])
           resources: {
             cpu: json('0.25')
             memory: '0.5Gi'
