@@ -5,6 +5,7 @@ import logging
 import os
 from collections.abc import Awaitable, Callable
 from uuid import UUID
+from typing import TYPE_CHECKING
 
 import httpx2
 import msal
@@ -18,6 +19,9 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import CallToolResult, ToolAnnotations
 
 from mcp_lab.auth import Endpoint, EntraVerifier, ProtectedMCP, caller, required_env
+
+if TYPE_CHECKING:
+    from mcp_lab.fabric import FabricWarehouse
 
 logger = logging.getLogger("velora")
 
@@ -63,10 +67,13 @@ class EntraOBO:
         )
 
     async def __call__(self, assertion: str) -> str:
+        return await self.exchange_for(assertion, self.scope)
+
+    async def exchange_for(self, assertion: str, scope: str) -> str:
         result = await asyncio.to_thread(
             self.app.acquire_token_on_behalf_of,
             user_assertion=assertion,
-            scopes=[self.scope],
+            scopes=[scope],
         )
         token = result.get("access_token")
         if not isinstance(token, str) or not token:
@@ -84,6 +91,9 @@ def create_gateway(
     verifier: TokenVerifier,
     rights: Endpoint,
     exchange_token: Callable[[str], Awaitable[str]],
+    *,
+    web_client_id: str | None = None,
+    fabric: "FabricWarehouse | None" = None,
 ) -> ProtectedMCP:
     if endpoint.client_id == rights.client_id or endpoint.url == rights.url:
         raise ValueError("Gateway en bron moeten aparte audiences en endpoints hebben.")
@@ -117,6 +127,11 @@ def create_gateway(
         """Vraag marges op; gateway EN testbron vereisen Finance.Reader."""
         return await forward("read_margin")
 
+    if web_client_id:
+        from mcp_lab.fabric import register_fabric
+        from mcp_lab.web import register_web
+        register_fabric(mcp, fabric)
+        register_web(mcp, endpoint, web_client_id)
     return mcp
 
 
@@ -135,10 +150,18 @@ if __name__ == "__main__":
         exchange = EntraOBO(gateway, rights, required_env("GATEWAY_CLIENT_SECRET"))
     else:
         raise ValueError("GATEWAY_CREDENTIAL_MODE moet secret of managed-identity zijn.")
+    from mcp_lab.fabric import FabricSettings, FabricWarehouse, SQL_SCOPE
+    fabric_settings = FabricSettings.from_env()
+
+    async def exchange_sql(assertion: str) -> str:
+        return await exchange.exchange_for(assertion, SQL_SCOPE)
+
     app = create_gateway(
         gateway,
         EntraVerifier(gateway),
         rights,
         exchange,
+        web_client_id=os.environ.get("WEB_CLIENT_ID") or None,
+        fabric=FabricWarehouse(fabric_settings, exchange_sql) if fabric_settings else None,
     ).http_app()
     uvicorn.run(app, host=os.environ.get("HOST", "127.0.0.1"), port=int(os.environ.get("PORT", "8000")))

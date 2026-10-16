@@ -5,6 +5,9 @@ Zie [bouwen.md](bouwen.md) voor de werkende lokale proef en de nog benodigde
 echte Entra-proef. Beide MCP-apps draaien in Azure; discovery en anonieme weigering
 zijn live gecontroleerd. De twee-gebruikers/OBO-proef staat nog open.
 De 3P-routes blijven ontwerp.
+De live webclient en de eerste echte bronroute staan in [weblab.md](weblab.md):
+MCP-gateway -> gedelegeerd SQL-token -> Fabric Warehouse met opgeslagen mockdata,
+tabelrechten en RLS. Dit is geen Fabric data-agent-MCP en geen Databricks-integratie.
 De offline browserdemo is geen bewijs voor deze opzet en wordt hiervoor niet uitgebreid.
 Productondersteuning en primaire bronnen staan in [mcp-onderzoek.md](mcp-onderzoek.md).
 Dit document legt vast wat onze eigen implementatie moet afdwingen.

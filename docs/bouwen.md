@@ -2,7 +2,9 @@
 
 ## Wat is gebouwd?
 
-Vier modules, zonder FastAPI, database of LLM:
+De oorspronkelijke controleproef gebruikt vier modules, zonder FastAPI of LLM.
+De live web/Fabric-uitbreiding voegt `web.py` en `fabric.py` toe en leest nu wel
+een echte database: zie **`weblab.md`** voor die route en de opgeslagen mockdata.
 
 | Bestand | Verantwoordelijkheid |
 |---|---|
@@ -134,7 +136,8 @@ expliciet; een HTTP-resource-URL wordt niet als Entra-audience verondersteld.
 
 ## Wat bewust nog ontbreekt
 
-- Fabric-/Databricks-routes: eerst deze twee grenzen live bewijzen.
+- Fabric data-agent-MCP en Databricks: de nieuwe Fabric-route gebruikt direct
+  Warehouse SQL met OBO/RLS, niet een data agent. Databricks volgt later.
 - Copilot-/Scout-configuratie: iedere client heeft eigen OAuth-voorwaarden.
 - Algemene tool-discovery/proxying, responsecache, agentconversaties en UI.
 - Een garantie op onmiddellijke rechtenintrekking: bestaande tokens kunnen

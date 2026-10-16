@@ -4,3 +4,5 @@
 !requirements.txt
 !mcp_lab/
 !mcp_lab/*.py
+!mcp_lab/static/
+!mcp_lab/static/*.html

@@ -19,6 +19,11 @@ param deployerObjectId string
 param tenantId string
 param gatewayClientId string
 param rightsClientId string
+param webClientId string = ''
+param fabricServer string = ''
+param fabricDatabase string = ''
+param fabricWorkspaceId string = ''
+param fabricWarehouseId string = ''
 param containerImage string = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
 
 var tags = {
@@ -142,6 +147,11 @@ module gateway './modules/container-app.bicep' = {
     rightsClientId: rightsClientId
     gatewayUrl: gatewayUrl
     rightsUrl: rightsUrl
+    webClientId: webClientId
+    fabricServer: fabricServer
+    fabricDatabase: fabricDatabase
+    fabricWorkspaceId: fabricWorkspaceId
+    fabricWarehouseId: fabricWarehouseId
   }
   dependsOn: [roles, rights]
 }

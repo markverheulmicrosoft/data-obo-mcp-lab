@@ -3,13 +3,20 @@
 Een Nederlandstalig leerlab voor een logische agent met meerdere kanalen,
 meerdere databronnen en verschillende gebruikersrechten.
 
-**Huidige status: kleine Python MCP-gateway, aparte Rights Test MCP en referentieclient.**
+**Huidige richting: live webleerlab met echte Fabric-opslag.**
+Zie **`docs\weblab.md`**: aanmelden, uitgelegde rechtenexperimenten, verwachte versus
+werkelijke uitkomsten en dezelfde bron in Fabric bekijken. De nieuwe webclient
+staat los van de oude offline `index.html`-simulator.
+
+**Bestaande basis: Python MCP-gateway, aparte Rights Test MCP en referentieclient.**
 De twee MCP-endpoints, JWT-validatie en onafhankelijke rechtencontrole werken in
 lokale HTTP-tests. Beide MCP-apps zijn in Azure uitgerold: een publieke
 HTTPS-gateway en een interne testbron, met gezonde actieve revisies.
 Entra-apps en managed-identity-federatie zijn ingericht; discovery en anonieme
 weigering zijn live gecontroleerd. **De echte twee-gebruikers/OBO-proef staat
-nog open.** Fabric, Databricks en Microsoft 365 zijn nog niet aangesloten.
+nog open.** De nieuwe Fabric-route gebruikt een echt Warehouse met opgeslagen
+mockdata en SQL-RLS, geen productiedata. Databricks is bewust uitgesteld;
+Microsoft 365/Copilot en Scout zijn nog niet aangesloten.
 De Foundry-voorbereidingscheck heeft lokaal ontbrekende `azd`-extensies geinstalleerd;
 deze zijn niet nodig voor de simulator.
 
@@ -47,6 +54,9 @@ De eerste gateway en custom test-MCP zijn nu geimplementeerd in `mcp_lab`.
 De bestaande HTML-demo hieronder blijft uitsluitend conceptueel lesmateriaal.
 
 ## Starten
+
+Onderstaande instructies starten alleen de **oude offline simulator**.
+Voor de echte webclient gebruik je de root-URL van de gedeployde gateway.
 
 Open `index.html` direct in een browser. Het bestand bevat alle code, stijl en synthetische
 data en heeft geen externe assets of internetverbinding nodig.

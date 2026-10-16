@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="description" content="Een praktisch leerlab voor echte Entra-identiteit, MCP, gedelegeerde toegang en Fabric-bronrechten.">
+  <title>Toegang in beeld · Fabric OBO-lab</title>
+  <script>
+  (() => {
+    const param = new URLSearchParams(window.location.search).get("scoutTheme");
+    const theme =
+      param || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    document.documentElement.setAttribute("data-theme", theme);
+  })();
+  </script>
+  <!--APP_STYLES-->
+</head>
+<body>
+  <a class="skip" href="#experimenten">Naar de experimenten</a>
+  <header class="topbar">
+    <div class="container topbar-inner">
+      <a class="brand" href="#start" aria-label="Toegang in beeld, begin">
+        <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+        Toegang in beeld
+      </a>
+      <nav aria-label="Hoofdnavigatie">
+        <a href="#keten">De keten</a>
+        <a href="#experimenten">Zelf testen</a>
+        <a href="#begrijpen">Begrijpen</a>
+        <button id="theme-toggle" class="theme-button" type="button" aria-label="Wissel licht en donker thema" title="Wissel thema">◐</button>
+      </nav>
+    </div>
+  </header>
+  <main class="container" id="start">
+    <section class="hero" aria-labelledby="page-title">
+      <div>
+        <p class="eyebrow accent">Het Fabric-identiteitslab</p>
+        <h1 id="page-title">Dezelfde data.<br><span class="accent">Andere rechten.</span></h1>
+        <p>Volg de weg van je eigen aanmelding naar de bron. Ontdek wat de gateway toestaat, wat Fabric beslist en welke rijen jij écht terugkrijgt.</p>
+      </div>
+      <aside class="hero-aside" aria-label="Wat dit lab wel en niet doet">
+        <p class="eyebrow">Geen simulatie. Wel demodata.</p>
+        <div class="chips"><span class="chip chip-accent">Fabric eerst</span><span class="chip">Databricks · later / niet verbonden</span></div>
+        <p>Je meldt echt aan en verstuurt echte MCP-aanroepen. De testgegevens zijn <strong>opgeslagen, synthetische demodata in een echte Warehouse</strong> — geen productiebedrijfsdata.</p>
+        <p>Geen persona-schakelaar, geen chatmodel en geen automatisch ingevulde successen.</p>
+      </aside>
+    </section>
+
+    <section class="card session-card" aria-labelledby="session-title">
+      <div class="session-main">
+        <div class="account-icon" id="account-icon" aria-hidden="true">?</div>
+        <div class="account-details">
+          <p class="eyebrow" id="session-title">Jouw echte sessie</p>
+          <h2 id="account-name">Nog niet aangemeld</h2>
+          <p class="muted small" id="account-detail">Meld aan met een North- of Finance-testaccount, niet met een beheeraccount.</p>
+        </div>
+        <div class="session-actions">
+          <button id="login" class="primary" type="button" disabled>Aanmelden met Microsoft</button>
+          <button id="switch-account" type="button" hidden disabled>Ander account</button>
+          <button id="logout" type="button" hidden disabled>Afmelden</button>
+        </div>
+      </div>
+      <dl class="session-meta">
+        <div><dt>Gateway-identiteit · uit gevalideerd JWT</dt><dd id="gateway-user">Nog niet opgehaald</dd></div>
+        <div><dt>Approllen · niet hetzelfde als bronrechten</dt><dd id="gateway-roles">Nog niet opgehaald</dd></div>
+        <div><dt>Fabric Warehouse</dt><dd id="source-status">Status nog niet opgehaald</dd></div>
+      </dl>
+      <label class="admin-check"><input id="admin-account" type="checkbox" disabled><span>Dit account heeft verhoogde Fabric- of workspace-rechten. <strong>Sluit deze sessie uit als bewijs voor eindgebruikersrechten.</strong> De UI kan niet alle beheerrechten vaststellen.</span></label>
+      <div id="notice" class="notice" role="status" aria-live="polite" aria-atomic="true">Openbare appconfiguratie ophalen…</div>
+    </section>
+
+    <section class="section" id="keten" aria-labelledby="chain-title">
+      <div class="section-heading">
+        <div><p class="eyebrow accent">Het hele plaatje</p><h2 id="chain-title">Eén gebruiker, meerdere controles</h2></div>
+        <p>Elke laag beantwoordt een andere vraag. Een toegestane tool is nog geen toegestane tabel.</p>
+      </div>
+      <div class="card chain" aria-label="Browser naar gateway naar Entra OBO naar Fabric Warehouse">
+        <div class="chain-step"><span class="number">01 / IDENTITEIT</span><h3>Browser</h3><p>Microsoft-aanmelding via MSAL. Een access token voor deze gateway, alleen in het werkgeheugen.</p></div>
+        <div class="chain-step"><span class="number">02 / TOOLRECHTEN</span><h3>MCP-gateway</h3><p>Valideert het JWT en de approl. Niet toegestaan? De tool stopt hier.</p></div>
+        <div class="chain-step"><span class="number">03 / DELEGATIE</span><h3>Entra OBO</h3><p>De gateway wisselt het token om voor brontoegang namens dezelfde gebruiker.</p></div>
+        <div class="chain-step"><span class="number">04 / DATARECHTEN</span><h3>Fabric Warehouse</h3><p>Itemtoegang, SQL SELECT en RLS bepalen of — en welke — data terugkomt.</p></div>
+      </div>
+      <p class="chain-note">Architectuuroverzicht, geen gesimuleerde uitvoeringstrace. Hieronder meten we alleen de werkelijke totale aanroeptijd; er zijn geen verzonnen deeltijden of afgeronde stappen.</p>
+    </section>
+
+    <section class="section" id="experimenten" aria-labelledby="experiments-title">
+      <div class="section-heading">
+        <div><p class="eyebrow accent">Vier gerichte experimenten</p><h2 id="experiments-title">Verwachten is niet hetzelfde als zien</h2></div>
+        <p>Begin bij 1. Elke knop verstuurt een echte aanvraag. Vergelijk daarna dezelfde stappen met een ander account.</p>
+      </div>
+      <div class="lab-grid">
+        <div class="experiments" aria-label="Experimenten">
+          <article class="card experiment" data-experiment="discovery">
+            <div class="experiment-heading"><span class="step-number">1</span><h3>Wie ben ik voor de gateway?</h3></div>
+            <p>Vraag de aangeboden tools op en laat de gateway de getekende gebruikersidentiteit, rollen en bronconfiguratie beschrijven.</p>
+            <button type="button" data-run="discovery" disabled>Verstuur discovery + describe_access</button>
+          </article>
+          <article class="card experiment" data-experiment="orders">
+            <div class="experiment-heading"><span class="step-number">2</span><h3>Welke orders zie ik?</h3></div>
+            <p>Dezelfde query, een andere gebruiker. North verwacht 3 Noord-rijen; Finance verwacht alle 6. De rijen worden door Fabric RLS gefilterd.</p>
+            <button type="button" data-run="orders" disabled>Roep fabric_orders aan</button>
+          </article>
+          <article class="card experiment" data-experiment="margins">
+            <div class="experiment-heading"><span class="step-number">3</span><h3>De gateway laat door. De bron ook?</h3></div>
+            <p>North én Finance mogen deze tool aanroepen. North mist aanvankelijk SQL SELECT op marges: de verwachte weigering komt uit Fabric.</p>
+            <button type="button" data-run="margins" disabled>Roep fabric_margins aan</button>
+          </article>
+          <article class="card experiment" data-experiment="finance">
+            <div class="experiment-heading"><span class="step-number">4</span><h3>Wat blokkeert de gateway zelf?</h3></div>
+            <p>Dezelfde margesquery, maar nu met Finance-rolcontrole vóór de bron. Deze knop doet een directe aanroep, óók als discovery de tool niet toont.</p>
+            <button type="button" data-run="finance" disabled>Roep fabric_finance_only aan</button>
+          </article>
+        </div>
+        <section class="card result-card" id="result-panel" aria-labelledby="result-title" aria-busy="false">
+          <div class="result-heading"><h3 id="result-title">De waarneming</h3><span class="result-status" id="result-status" data-status="idle">Nog geen aanroep</span></div>
+          <div id="result-body">
+            <div class="empty-state"><div class="empty-symbol" aria-hidden="true">↗</div><h3>Jouw eerste echte bewijs begint hier</h3><p>Meld aan en voer een experiment uit. Je ziet de verwachting naast het werkelijke resultaat — ook als dat een weigering of een configuratieprobleem is.</p><p class="small">Geen aanroep betekent: nog niets bewezen.</p></div>
+          </div>
+          <div class="history" id="history" hidden><h4>Waarnemingen in deze sessie · maximaal 12</h4><ul class="history-list" id="history-list"></ul></div>
+        </section>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="expectations-title">
+      <div class="section-heading">
+        <div><p class="eyebrow accent">Vooraf, niet gemeten</p><h2 id="expectations-title">De oorspronkelijke verwachting</h2></div>
+        <p>Dit is het lesontwerp bij de initiële seed en rechten. Geen actuele rechteninventaris en geen belofte dat de omgeving al klaarstaat.</p>
+      </div>
+      <div class="table-wrap card">
+        <table>
+          <caption>Vergelijk echte, niet-beherende testaccounts. North betekent approl North.Reader; Finance betekent Finance.Reader. Bij beide rollen geldt de ruimere Finance-verwachting. Andere rollen worden niet gelijkgesteld.</caption>
+          <thead><tr><th scope="col">Experiment</th><th scope="col">North</th><th scope="col">Finance</th><th scope="col">Geen labrol</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">1 · Identiteit & tools</th><td>JWT-rol North.Reader; aangeboden tools</td><td>JWT-rol Finance.Reader; aangeboden tools</td><td>Geen North.Reader/Finance.Reader in JWT; discovery kan beperkt zijn</td></tr>
+            <tr><th scope="row">2 · Orders / RLS</th><td>3 rijen · alleen Noord</td><td>6 rijen · Noord + Zuid</td><td>Geen Fabric-tooltoegang verwacht</td></tr>
+            <tr><th scope="row">3 · Marges / bron</th><td>Bron weigert SQL SELECT<br><code>SOURCE_FORBIDDEN</code></td><td>Bron staat margesquery toe</td><td>Gateway blokkeert; bron niet getest</td></tr>
+            <tr><th scope="row">4 · Finance / gateway</th><td>Gateway weigert vóór SQL<br><code>TOOL_FORBIDDEN</code></td><td>Gateway laat door; bron controleert daarna</td><td>Gateway blokkeert; bron niet getest</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="footnote">Een lege tabel is geen toestemmingweigering. Een netwerkfout, ontbrekende configuratie of mislukte OBO is evenmin een geslaagde rechtentest. Alleen de ontvangen respons bepaalt wat werkelijk is waargenomen.</p>
+    </section>
+
+    <section class="section" id="begrijpen" aria-labelledby="learning-title">
+      <div class="section-heading"><div><p class="eyebrow accent">Houd de lagen uit elkaar</p><h2 id="learning-title">Vier rechten die je niet moet verwarren</h2></div></div>
+      <div class="learning-grid">
+        <article class="card learning-card"><p class="eyebrow">Gateway</p><h3>Mag ik deze tool gebruiken?</h3><p>De approl North.Reader of Finance.Reader komt uit het gevalideerde access token. De gateway kan een tool blokkeren zonder een SQL-query uit te voeren.</p></article>
+        <article class="card learning-card"><p class="eyebrow">Fabric-item</p><h3>Mag ik het item benaderen?</h3><p>Fabric <strong>Read</strong> geeft itemtoegang. Dat is niet automatisch SELECT op elke tabel. Brede workspace-rollen of aanvullende ReadData-rechten kunnen de test beïnvloeden.</p></article>
+        <article class="card learning-card"><p class="eyebrow">SQL-tabel</p><h3>Mag ik deze tabel lezen?</h3><p>SQL <strong>SELECT</strong> bepaalt tabeltoegang. Voor de margestabel is dat aanvankelijk alleen Finance. North mag de tool wel vragen, maar de bron weigert.</p></article>
+        <article class="card learning-card"><p class="eyebrow">Rijen</p><h3>Welke rijen krijg ik te zien?</h3><p><strong>Row-level security</strong> filtert rijen ná succesvolle toegang tot de tabel. North ziet Noord; Finance ziet ook Zuid. De bron dwingt dit af, niet de browser.</p></article>
+      </div>
+    </section>
+
+    <section class="section next-grid" aria-label="Verder onderzoeken">
+      <article class="card next-card">
+        <p class="eyebrow accent">Controleer buiten de gateway</p><h3>Open de echte bron</h3>
+        <p id="source-link-description">De echte Fabric-itemlink verschijnt pas na aanmelden én een geslaagde describe_access-aanroep. We verzinnen geen bron-URL.</p>
+        <a id="source-link" class="button source-open" target="_blank" rel="noopener noreferrer" hidden>Open Fabric Warehouse ↗</a>
+        <p>Open in Fabric de <strong>SQL-editor van dezelfde Warehouse, als exact dezelfde gebruiker</strong>, en voer daar de overeenkomstige query uit. Dan test je dezelfde SQL-rechten en RLS.</p>
+        <p>Een Lakehouse-, OneLake- of bestandsroute is <strong>geen gelijkwaardige RLS-test</strong>: die kan buiten deze Warehouse-SQL-beveiliging vallen. Controleer ook het account in het Fabric-portaal.</p>
+      </article>
+      <article class="card next-card">
+        <p class="eyebrow accent">Wisselen & opnieuw proberen</p><h3>Verander de gebruiker, niet het verhaal</h3>
+        <ol>
+          <li>Kies <strong>Ander account</strong> en selecteer echt een ander Microsoft-account. Oude identiteit, gegevens en waarnemingen worden direct gewist.</li>
+          <li>Voer de vier experimenten opnieuw uit. De verwachting wordt gekoppeld aan de gatewayrollen, niet aan een gekozen persona.</li>
+          <li>Laat rechten alleen wijzigen via het <strong>Fabric-portaal of SQL</strong>. Dit scherm heeft geen beheerdersachterdeur.</li>
+          <li>Na nieuwe grants, consent of rolwijzigingen: wacht op propagatie, meld af en heropen de client. Een bestaand token kan nog oude rollen bevatten.</li>
+        </ol>
+        <p>Een beheeraccount is geschikt voor inrichting, niet voor bewijs van beperkte gebruikersrechten. Gebruik aparte North- en Finance-testaccounts.</p>
+      </article>
+    </section>
+    <footer class="footer"><span>Fabric OBO-lab · echte aanvragen, opgeslagen demodata · geen productiebedrijfsdata</span><span>De eerdere offline simulator en synthetische MCP-control zijn geen bronbewijs. Databricks volgt later.</span></footer>
+  </main>
+  <noscript><p class="notice">JavaScript is nodig voor Microsoft-aanmelding en echte MCP-aanroepen. Zonder JavaScript voert deze pagina geen tests uit.</p></noscript>
+  <!--APP_SCRIPT-->
+</body>
+</html>

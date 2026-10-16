@@ -24,6 +24,9 @@ logger = logging.getLogger("velora")
 ROLES = {
     "list_orders": frozenset({"North.Reader", "Finance.Reader"}),
     "read_margin": frozenset({"Finance.Reader"}),
+    "fabric_orders": frozenset({"North.Reader", "Finance.Reader"}),
+    "fabric_margins": frozenset({"North.Reader", "Finance.Reader"}),
+    "fabric_finance_only": frozenset({"Finance.Reader"}),
 }
 
 
@@ -133,6 +136,8 @@ def caller() -> AccessToken:
 
 
 def allowed(tool: str, token: AccessToken) -> bool:
+    if tool == "describe_access":
+        return True
     return bool(ROLES.get(tool, frozenset()).intersection((token.claims or {}).get("roles", [])))
 
 

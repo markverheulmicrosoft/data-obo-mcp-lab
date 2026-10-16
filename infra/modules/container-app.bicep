@@ -12,6 +12,11 @@ param gatewayClientId string
 param rightsClientId string
 param gatewayUrl string
 param rightsUrl string
+param webClientId string = ''
+param fabricServer string = ''
+param fabricDatabase string = ''
+param fabricWorkspaceId string = ''
+param fabricWarehouseId string = ''
 param containerImage string = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
 
 var isPlaceholder = containerImage == 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
@@ -29,6 +34,11 @@ var gatewayEnv = [
   { name: 'GATEWAY_URL', value: gatewayUrl }
   { name: 'GATEWAY_CREDENTIAL_MODE', value: 'managed-identity' }
   { name: 'GATEWAY_MANAGED_IDENTITY_CLIENT_ID', value: managedIdentityClientId }
+  { name: 'WEB_CLIENT_ID', value: webClientId }
+  { name: 'FABRIC_SQL_SERVER', value: fabricServer }
+  { name: 'FABRIC_SQL_DATABASE', value: fabricDatabase }
+  { name: 'FABRIC_WORKSPACE_ID', value: fabricWorkspaceId }
+  { name: 'FABRIC_WAREHOUSE_ID', value: fabricWarehouseId }
 ]
 
 resource app 'Microsoft.App/containerApps@2026-07-01' = {

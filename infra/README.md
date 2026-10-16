@@ -14,6 +14,7 @@ Vanuit de projectroot, met Python 3.11+ en Azure CLI:
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+npm ci
 Copy-Item infra\.env.example .env
 ```
 
@@ -46,16 +47,16 @@ Na beoordeling van doel en kosten:
 
 Het script doet vijf dingen:
 
-1. Maakt/hergebruikt drie herkenbaar gemarkeerde lab-appregistraties: twee
-   API's en een public client. Het richt delegated consent en de twee
+1. Maakt/hergebruikt de eigen herkenbaar gemarkeerde lab-appregistraties: twee
+   API's, een native referentieclient en een aparte browser-SPA. Het richt delegated consent en de twee
    gebruikersrollen per API in. Geen gebruikerswachtwoorden worden gewijzigd.
 2. Deployt de Azure-basis en managed-identityrollen. Tijdelijke placeholder-apps
    blijven intern en krijgen geen secrets. Bij een gewone redeploy wordt een
    bestaande echte app niet teruggezet naar zo'n placeholder.
 3. Koppelt de gateway-managed identity aan uitsluitend de eigen gateway-app
    via een federated identity credential. Bouwt een image via ACR uit een
-   strikte allowlist: de vijf Python-modules,
-   `requirements.txt` en de Docker-buildbestanden.
+   strikte allowlist: de runtime-Python-modules, de twee lokaal gebundelde
+   HTML-assets, `requirements.txt` en de Docker-buildbestanden.
 4. Deployt het echte image met expliciete managed-identity-clientauthenticatie.
    Voor iedere deployment wordt what-if gecontroleerd; Delete of een ander
    resourcegroepscope stopt de uitvoering. Alleen de gateway wordt publiek; Rights MCP blijft
@@ -70,6 +71,11 @@ Rights MCP ontvangt een afzonderlijk delegated token voor die gebruiker.
 Er is geen terugval naar een app-only datatoken of een clientsecret.
 
 ## Wat hiermee wel en niet is bewezen
+
+De browserclient staat op `/`; `/mcp` blijft het beschermde protocolendpoint.
+Zie `docs\weblab.md` voor de echte Fabric-bron, beperkte item-/SQL-rechten,
+de browserproef en het verschil met de oude synthetische controlegroep.
+Fabric gebruikt delegated SQL-toegang; dit is nog geen Fabric data-agent-MCP.
 
 Een geslaagde controle bewijst dat de gateway het juiste endpoint/tenant
 adverteert en anonieme toegang weigert. Het is **nog geen bewijs van OBO en

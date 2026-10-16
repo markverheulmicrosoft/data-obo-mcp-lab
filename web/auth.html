@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Aanmelding afronden · Fabric OBO-lab</title>
+  <script>
+  (() => {
+    const param = new URLSearchParams(window.location.search).get("scoutTheme");
+    const theme =
+      param || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    document.documentElement.setAttribute("data-theme", theme);
+  })();
+  </script>
+  <!--APP_STYLES-->
+</head>
+<body>
+  <main class="card callback"><p class="eyebrow accent">Fabric OBO-lab</p><h1>Aanmelding afronden</h1><p id="auth-status" role="status">Dit venster geeft de aanmelding veilig terug aan het lab.</p></main>
+  <!--APP_SCRIPT-->
+</body>
+</html>

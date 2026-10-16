@@ -7,6 +7,8 @@ import httpx2
 
 GRAPH = "https://graph.microsoft.com/v1.0/"
 SECRET_LABEL = "mcp-lab-deployment"
+SQL_APP_ID = "022907d3-0f1b-48f7-badc-1ba6abab6d66"
+SQL_SCOPE_ID = "c39ef2d1-04ce-46dc-8b5f-e9a5c60f0fc9"
 
 
 def stable_id(prefix: str, value: str) -> str:
@@ -40,6 +42,14 @@ def api_definition(prefix: str, kind: str) -> dict:
 
 def permission(resource_app_id: str, scope_id: str) -> list:
     return [{"resourceAppId": resource_app_id, "resourceAccess": [{"id": scope_id, "type": "Scope"}]}]
+
+
+def canonical_permissions(items: list) -> list:
+    # Graph's list and individual GET endpoints can return different array orders.
+    return sorted([
+        {**item, "resourceAccess": sorted(item["resourceAccess"], key=lambda entry: (entry["id"], entry["type"]))}
+        for item in items
+    ], key=lambda item: item["resourceAppId"])
 
 
 class Graph:
@@ -78,9 +88,14 @@ class Graph:
 
 
 def ensure_app(
-    graph: Graph, prefix: str, kind: str, extra: dict, expected_id: str = "", *, owner_id: str
+    graph: Graph, prefix: str, kind: str, extra: dict, expected_id: str = "", *, owner_id: str,
+    allow_sql_delegation: bool = False,
 ) -> dict:
     owner_id = str(UUID(owner_id))
+    if kind not in {"gateway", "rights", "client", "web-client"}:
+        raise ValueError("Onbekend type lab-app.")
+    is_api = kind in {"gateway", "rights"}
+    extend_sql_permission = False
     name, tag = f"{prefix}-{kind}", f"mcp-lab:{prefix}"
     query = f"appId eq '{UUID(expected_id)}'" if expected_id else f"displayName eq '{name}'"
     apps = graph.items("applications", **{"$filter": query})
@@ -101,7 +116,7 @@ def ensure_app(
             raise RuntimeError(f"{kind}: bestaande app is niet herkenbaar als deze lab-app.")
         if app.get("signInAudience") != "AzureADMyOrg":
             raise RuntimeError(f"{kind}: onverwachte tenantconfiguratie; niet automatisch overschrijven.")
-        if kind != "client":
+        if is_api:
             definition = api_definition(prefix, kind)
             actual_roles = {r["value"]: r for r in app.get("appRoles", [])}
             for role in definition["appRoles"]:
@@ -117,16 +132,28 @@ def ensure_app(
             ):
                 raise RuntimeError(f"{kind}: v2/scopeconfiguratie wijkt af; niet stilzwijgend herstellen.")
         else:
-            if (app.get("publicClient") or {}).get("redirectUris", []) != ["http://localhost"]:
+            public_redirects = ["http://localhost"] if kind == "client" else []
+            if (app.get("publicClient") or {}).get("redirectUris", []) != public_redirects:
                 raise RuntimeError("Referentieclient moet uitsluitend de loopback-redirect hebben.")
             if app.get("passwordCredentials") or app.get("keyCredentials"):
                 raise RuntimeError("De public client mag geen achtergebleven clientcredentials hebben.")
-        if any((app.get(surface) or {}).get("redirectUris", []) for surface in ("web", "spa")):
+        expected_spa = (extra.get("spa") or {}).get("redirectUris", []) if kind == "web-client" else []
+        if (app.get("web") or {}).get("redirectUris", []) or (
+            (app.get("spa") or {}).get("redirectUris", []) != expected_spa
+        ):
             raise RuntimeError(f"{kind}: onverwachte web/SPA-redirects; geen consent verlenen.")
-        if kind != "client" and (app.get("publicClient") or {}).get("redirectUris", []):
+        if is_api and (app.get("publicClient") or {}).get("redirectUris", []):
             raise RuntimeError(f"{kind}: een API-app mag geen public-client-redirect hebben.")
-        if app.get("requiredResourceAccess", []) != extra.get("requiredResourceAccess", []):
-            raise RuntimeError(f"{kind}: gedelegeerde API-permissies wijken af; eerst beoordelen.")
+        if canonical_permissions(app.get("requiredResourceAccess", [])) != canonical_permissions(extra.get("requiredResourceAccess", [])):
+            desired = extra.get("requiredResourceAccess", [])
+            if (
+                allow_sql_delegation and kind == "gateway" and len(desired) == 2
+                and desired[-1:] == permission(SQL_APP_ID, SQL_SCOPE_ID)
+                and canonical_permissions(app.get("requiredResourceAccess", [])) == canonical_permissions(desired[:-1])
+            ):
+                extend_sql_permission = True
+            else:
+                raise RuntimeError(f"{kind}: gedelegeerde API-permissies wijken af; eerst beoordelen.")
     else:
         app = graph.request("POST", "applications", body={
             "displayName": name, "tags": [tag], "signInAudience": "AzureADMyOrg", **extra,
@@ -138,7 +165,11 @@ def ensure_app(
         })
     elif owners != {owner_id}:
         raise RuntimeError(f"{kind}: eigenaarschap is niet uitsluitend van de huidige deployer.")
-    if kind != "client":
+    if extend_sql_permission:
+        graph.request("PATCH", f"applications/{app['id']}", body={
+            "requiredResourceAccess": extra["requiredResourceAccess"],
+        })
+    if is_api:
         uri = f"api://{app['appId']}"
         existing = app.get("identifierUris", [])
         if existing and existing != [uri]:
@@ -146,6 +177,30 @@ def ensure_app(
         if not existing:
             graph.request("PATCH", f"applications/{app['id']}", body={"identifierUris": [uri]})
     return app
+
+
+def ensure_web_client(
+    graph: Graph, prefix: str, gateway_app_id: str, redirect_uri: str, values: dict, save, *, owner_id: str,
+) -> str:
+    from urllib.parse import urlsplit
+
+    uri = urlsplit(redirect_uri)
+    if (
+        uri.scheme != "https" or not uri.hostname or uri.port not in (None, 443)
+        or uri.username or uri.password or uri.query or uri.fragment or uri.path != "/auth.html"
+    ):
+        raise ValueError("Webclient vereist een exacte HTTPS /auth.html redirect.")
+    app = ensure_app(graph, prefix, "web-client", {
+        "spa": {"redirectUris": [redirect_uri]},
+        "requiredResourceAccess": permission(gateway_app_id, stable_id(prefix, "gateway/access_as_user")),
+    }, values.get("WEB_CLIENT_ID", ""), owner_id=owner_id)
+    save({"WEB_CLIENT_ID": app["appId"]})
+    principal = ensure_principal(graph, app, False)
+    gateways = graph.items("servicePrincipals", **{"$filter": f"appId eq '{UUID(gateway_app_id)}'"})
+    if len(gateways) != 1:
+        raise RuntimeError("Geen unieke gateway-serviceprincipal voor de webclient.")
+    ensure_grant(graph, principal, gateways[0])
+    return app["appId"]
 
 
 def ensure_principal(graph: Graph, app: dict, api: bool) -> dict:
@@ -158,18 +213,20 @@ def ensure_principal(graph: Graph, app: dict, api: bool) -> dict:
     return principal
 
 
-def ensure_grant(graph: Graph, client: dict, resource: dict) -> None:
+def ensure_grant(graph: Graph, client: dict, resource: dict, *, scope: str = "access_as_user") -> None:
+    if scope not in {"access_as_user", "user_impersonation"}:
+        raise ValueError("Onbekende gedelegeerde scope.")
     grants = graph.items("oauth2PermissionGrants", **{
         "$filter": f"clientId eq '{client['id']}' and resourceId eq '{resource['id']}'",
     })
     shared = [grant for grant in grants if grant["consentType"] == "AllPrincipals"]
     if shared:
-        if len(shared) != 1 or set(shared[0]["scope"].split()) != {"access_as_user"}:
+        if len(shared) != 1 or set(shared[0]["scope"].split()) != {scope}:
             raise RuntimeError("Bestaande consent wijkt af; geen automatische verbreding.")
         return
     graph.request("POST", "oauth2PermissionGrants", body={
         "clientId": client["id"], "resourceId": resource["id"],
-        "consentType": "AllPrincipals", "scope": "access_as_user",
+        "consentType": "AllPrincipals", "scope": scope,
     })
 
 
@@ -203,8 +260,12 @@ def bootstrap(
     save({"RIGHTS_CLIENT_ID": rights["appId"]})
     gateway_definition = api_definition(prefix, "gateway")
     gateway_definition["requiredResourceAccess"] = permission(rights["appId"], stable_id(prefix, "rights/access_as_user"))
+    enable_sql = bool(values.get("FABRIC_SQL_SERVER"))
+    if enable_sql:
+        gateway_definition["requiredResourceAccess"] += permission(SQL_APP_ID, SQL_SCOPE_ID)
     gateway = ensure_app(
         graph, prefix, "gateway", gateway_definition, values.get("GATEWAY_CLIENT_ID", ""), owner_id=owner_id,
+        allow_sql_delegation=enable_sql,
     )
     save({"GATEWAY_CLIENT_ID": gateway["appId"]})
     client = ensure_app(graph, prefix, "client", {
@@ -222,6 +283,17 @@ def bootstrap(
             ensure_role(graph, principal, user_id, stable_id(prefix, f"{kind}/{role}"))
     ensure_grant(graph, gateway_sp, rights_sp)
     ensure_grant(graph, client_sp, gateway_sp)
+    if enable_sql:
+        resources = graph.items("servicePrincipals", **{"$filter": f"appId eq '{SQL_APP_ID}'"})
+        if len(resources) > 1:
+            raise RuntimeError("Meerdere SQL-resourceprincipals gevonden.")
+        resource = resources[0] if resources else graph.request("POST", "servicePrincipals", body={"appId": SQL_APP_ID})
+        if "https://database.windows.net/" not in resource.get("servicePrincipalNames", []) or not any(
+            scope.get("id") == SQL_SCOPE_ID and scope.get("value") == "user_impersonation" and scope.get("isEnabled")
+            for scope in resource.get("oauth2PermissionScopes", [])
+        ):
+            raise RuntimeError("De SQL-resource heeft niet de verwachte delegated scope.")
+        ensure_grant(graph, gateway_sp, resource, scope="user_impersonation")
     if not need_secret:
         return {
             "gateway": gateway["appId"], "rights": rights["appId"], "client": client["appId"],

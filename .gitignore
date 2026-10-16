@@ -13,3 +13,4 @@ test-results/
 .archify/
 .playwright-mcp/
 .deploy/
+mcp_lab/static/

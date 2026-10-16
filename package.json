@@ -2,10 +2,19 @@
   "name": "velora-data-identity-lab",
   "version": "0.1.0",
   "private": true,
-  "description": "Offline leerlab voor data-agents, gebruikersrechten en OBO-concepten",
+  "description": "Live MCP-leerlab en afzonderlijke offline conceptsimulator",
   "scripts": {
     "start": "node server.cjs",
-    "test": "node --test tests/*.test.cjs"
+    "test": "node --test tests/*.test.cjs",
+    "build:web": "node web\\build.mjs"
+  },
+  "dependencies": {
+    "@azure/msal-browser": "5.25.1",
+    "@cfworker/json-schema": "4.1.1",
+    "@modelcontextprotocol/sdk": "1.32.1"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
   },
   "engines": {
     "node": ">=22"

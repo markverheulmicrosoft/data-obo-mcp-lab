@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 import webbrowser
@@ -19,12 +20,23 @@ from urllib.parse import quote
 import httpx2
 from dotenv import dotenv_values, set_key
 
-from entra import Graph, bootstrap, ensure_managed_identity_federation
+from entra import Graph, bootstrap, ensure_managed_identity_federation, ensure_web_client
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
 INFRA = ROOT / "infra"
 PLACEHOLDER = "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
-SOURCE_FILES = ("__init__.py", "auth.py", "gateway.py", "rights_mcp.py", "client.py")
+SOURCE_FILES = ("__init__.py", "auth.py", "gateway.py", "rights_mcp.py", "client.py", "web.py", "fabric.py")
+WEB_FILES = ("index.html", "auth.html")
+
+
+def build_web() -> None:
+    node = shutil.which("node")
+    if not node:
+        raise RuntimeError("Node.js ontbreekt; nodig voor de lokale webbuild.")
+    result = subprocess.run([node, str(ROOT / "web" / "build.mjs")], cwd=ROOT, timeout=120)
+    if result.returncode:
+        raise RuntimeError("Webbuild mislukt. Installeer de vastgelegde dependencies met npm ci.")
 
 
 def private_write(path: Path, text: str) -> None:
@@ -124,6 +136,12 @@ def stage_build(destination: Path) -> None:
         if source.is_symlink():
             raise ValueError("Geen symlinks in het buildpakket.")
         shutil.copyfile(source, destination / "mcp_lab" / name)
+    (destination / "mcp_lab" / "static").mkdir()
+    for name in WEB_FILES:
+        source = ROOT / "mcp_lab" / "static" / name
+        if source.is_symlink() or not source.is_file():
+            raise ValueError("Webbuild ontbreekt of is een symlink; voer eerst npm run build:web uit.")
+        shutil.copyfile(source, destination / "mcp_lab" / "static" / name)
     for source, name in [(ROOT / "requirements.txt", "requirements.txt"),
                          (INFRA / "Dockerfile", "Dockerfile"), (INFRA / ".dockerignore", ".dockerignore")]:
         if source.is_symlink():
@@ -138,6 +156,11 @@ def arm_parameters(cfg: Settings, state: dict, operator: dict, apps: dict, image
         "deployedBy": operator["displayName"], "deployerObjectId": operator["id"],
         "tenantId": cfg.tenant, "gatewayClientId": apps["gateway"], "rightsClientId": apps["rights"],
         "containerImage": image,
+        "webClientId": apps.get("web", ""),
+        "fabricServer": apps.get("fabricServer", ""),
+        "fabricDatabase": apps.get("fabricDatabase", ""),
+        "fabricWorkspaceId": apps.get("fabricWorkspaceId", ""),
+        "fabricWarehouseId": apps.get("fabricWarehouseId", ""),
     }
     return {
         "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
@@ -218,6 +241,7 @@ def smoke(gateway_url: str, tenant: str, client_id: str) -> None:
 
 
 def apply(cfg: Settings, values: dict, env_file: Path) -> None:
+    build_web()
     state_dir = ROOT / ".deploy"
     if state_dir.is_symlink():
         raise ValueError(".deploy mag geen symlink zijn.")
@@ -313,6 +337,14 @@ def apply(cfg: Settings, values: dict, env_file: Path) -> None:
     else:
         print("2/5 Azure-infrastructuur en RBAC; tijdelijke apps blijven intern.")
         outputs = deploy(PLACEHOLDER, "bootstrap")
+    environment = az.run(
+        "containerapp", "env", "show", "--name", names["containerEnvironmentName"],
+        "--resource-group", names["resourceGroupName"], "--subscription", cfg.subscription,
+    )
+    domain = environment["properties"]["defaultDomain"]
+    if not re.fullmatch(r"[a-z0-9.-]+\.azurecontainerapps\.io", domain):
+        raise RuntimeError("Container Apps retourneert een onverwacht domein.")
+    redirect_uri = f"https://{names['gatewayAppName']}.{domain}/auth.html"
     identity = az.run(
         "identity", "show", "--name", names["gatewayIdentityName"],
         "--resource-group", names["resourceGroupName"], "--subscription", cfg.subscription,
@@ -326,8 +358,19 @@ def apply(cfg: Settings, values: dict, env_file: Path) -> None:
         ensure_managed_identity_federation(
             graph, apps["gatewayObjectId"], apps["gateway"], operator["id"], cfg.tenant, identity["principalId"],
         )
+        apps["web"] = ensure_web_client(
+            graph, cfg.prefix, apps["gateway"], redirect_uri, values, save, owner_id=operator["id"],
+        )
     finally:
         graph.close()
+    for parameter, key in (
+        ("fabricServer", "FABRIC_SQL_SERVER"), ("fabricDatabase", "FABRIC_SQL_DATABASE"),
+        ("fabricWorkspaceId", "FABRIC_WORKSPACE_ID"), ("fabricWarehouseId", "FABRIC_WAREHOUSE_ID"),
+    ):
+        apps[parameter] = values.get(key, "")
+    if any(apps[key] for key in ("fabricServer", "fabricDatabase", "fabricWorkspaceId", "fabricWarehouseId")):
+        from mcp_lab.fabric import FabricSettings
+        FabricSettings(apps["fabricServer"], apps["fabricDatabase"], apps["fabricWorkspaceId"], apps["fabricWarehouseId"])
     print("3/5 Alleen Python-broncode bouwen in ACR; geen .env of credentials in het pakket.")
     tag = f"mcp-lab:{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
     with tempfile.TemporaryDirectory(prefix="build-", dir=state_dir) as folder:

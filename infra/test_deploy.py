@@ -13,7 +13,8 @@ import httpx2
 import deploy
 from entra import (
     Graph, api_definition, bootstrap, ensure_app, ensure_grant,
-    ensure_managed_identity_federation, ensure_role, stable_id,
+    ensure_managed_identity_federation, ensure_role, ensure_web_client, stable_id,
+    permission, canonical_permissions, SQL_APP_ID, SQL_SCOPE_ID,
 )
 
 TENANT = "11111111-1111-4111-8111-111111111111"
@@ -75,6 +76,8 @@ class DeploymentTests(unittest.TestCase):
                 if args[:2] == ("identity", "show"):
                     return {"tenantId": TENANT, "name": names["gatewayIdentityName"],
                             "principalId": "88888888-8888-4888-8888-888888888888"}
+                if args[:3] == ("containerapp", "env", "show"):
+                    return {"properties": {"defaultDomain": "example.swedencentral.azurecontainerapps.io"}}
                 if args[:2] == ("deployment", "sub"):
                     path = Path(args[args.index("--parameters") + 1][1:])
                     parameter_files.append(path)
@@ -104,6 +107,8 @@ class DeploymentTests(unittest.TestCase):
                 return {"gateway": GATEWAY, "rights": RIGHTS, "gatewayObjectId": GATEWAY}
 
             with patch.object(deploy, "ROOT", root), patch.object(deploy, "Azure", return_value=fake), patch.object(
+                deploy, "build_web"
+            ), patch.object(deploy, "ensure_web_client", return_value=GATEWAY) as web_client, patch.object(
                 deploy, "Graph", return_value=graph
             ), patch.object(deploy, "bootstrap", side_effect=identities), patch.object(
                 deploy, "stage_build"
@@ -119,6 +124,7 @@ class DeploymentTests(unittest.TestCase):
             self.assertEqual(smoke.call_count, 2)
             self.assertEqual(seed.call_count, 0)
             self.assertEqual(federation.call_count, 2)
+            self.assertEqual(web_client.call_count, 2)
             self.assertTrue(all(not path.exists() for path in parameter_files))
             self.assertNotIn("test-only-secret", state_file.read_text())
             self.assertNotIn("test-only-secret", output.getvalue())
@@ -143,6 +149,10 @@ class DeploymentTests(unittest.TestCase):
             root = Path(folder) / "project"
             (root / "mcp_lab").mkdir(parents=True)
             (root / "infra").mkdir()
+            (root / "mcp_lab" / "static").mkdir()
+            for name in deploy.WEB_FILES:
+                (root / "mcp_lab" / "static" / name).write_text("<html>Build output</html>", encoding="utf-8")
+            (root / "mcp_lab" / "static" / "secret.json").write_text("DO_NOT_UPLOAD", encoding="utf-8")
             for name in deploy.SOURCE_FILES:
                 (root / "mcp_lab" / name).write_text("# code", encoding="utf-8")
             (root / "mcp_lab" / "extra-secret.py").write_text("DO_NOT_UPLOAD", encoding="utf-8")
@@ -155,6 +165,7 @@ class DeploymentTests(unittest.TestCase):
                 deploy.stage_build(target)
             expected = {"requirements.txt", "Dockerfile", ".dockerignore"}
             expected |= {f"mcp_lab/{name}" for name in deploy.SOURCE_FILES}
+            expected |= {f"mcp_lab/static/{name}" for name in deploy.WEB_FILES}
             self.assertEqual({p.relative_to(target).as_posix() for p in target.rglob("*") if p.is_file()}, expected)
             self.assertNotIn("DO_NOT_UPLOAD", "".join(p.read_text() for p in target.rglob("*") if p.is_file()))
 
@@ -273,6 +284,72 @@ class DeploymentTests(unittest.TestCase):
 
 
 class IdentityTests(unittest.TestCase):
+    def test_permission_comparison_ignores_order_but_not_extra_grants_or_duplicates(self):
+        expected = permission(RIGHTS, NORTH) + permission(SQL_APP_ID, SQL_SCOPE_ID)
+        self.assertEqual(canonical_permissions(expected), canonical_permissions(list(reversed(expected))))
+        self.assertNotEqual(canonical_permissions(expected), canonical_permissions(expected + permission(GATEWAY, FINANCE)))
+        self.assertNotEqual(canonical_permissions(expected), canonical_permissions(expected + expected[:1]))
+
+    def test_sql_delegation_upgrade_requires_pinned_app_and_exclusive_owner(self):
+        definition = api_definition(PREFIX, "gateway")
+        previous = permission(RIGHTS, stable_id(PREFIX, "rights/access_as_user"))
+        desired = {**definition, "requiredResourceAccess": previous + permission(SQL_APP_ID, SQL_SCOPE_ID)}
+        app = {
+            **self.client_fixture(), **definition, "displayName": f"{PREFIX}-gateway",
+            "publicClient": {"redirectUris": []}, "requiredResourceAccess": previous,
+            "identifierUris": [f"api://{GATEWAY}"],
+        }
+        for owners in ([{"id": FINANCE}], [{"id": FINANCE}, {"id": NORTH}]):
+            graph = Mock()
+            graph.items.side_effect = [[app], owners]
+            graph.request.return_value = app
+            if len(owners) == 1:
+                ensure_app(graph, PREFIX, "gateway", desired, GATEWAY, owner_id=FINANCE, allow_sql_delegation=True)
+                graph.request.assert_any_call("PATCH", f"applications/{NORTH}", body={
+                    "requiredResourceAccess": desired["requiredResourceAccess"],
+                })
+            else:
+                with self.assertRaisesRegex(RuntimeError, "eigenaarschap"):
+                    ensure_app(graph, PREFIX, "gateway", desired, GATEWAY, owner_id=FINANCE, allow_sql_delegation=True)
+                self.assertTrue(all(call.args[0] == "GET" for call in graph.request.call_args_list))
+
+    def test_spa_redirect_is_exact_and_public_client_has_no_credentials(self):
+        definition = {
+            "spa": {"redirectUris": ["https://lab.example/auth.html"]},
+            "requiredResourceAccess": [],
+        }
+        app = {
+            **self.client_fixture(),
+            "displayName": f"{PREFIX}-web-client",
+            "publicClient": {"redirectUris": []},
+            "spa": definition["spa"],
+        }
+        graph = Mock()
+        graph.items.side_effect = [[app], [{"id": FINANCE}]]
+        graph.request.return_value = app
+        self.assertEqual(
+            ensure_app(graph, PREFIX, "web-client", definition, GATEWAY, owner_id=FINANCE)["appId"], GATEWAY,
+        )
+        for update in (
+            {"spa": {"redirectUris": ["https://attacker.invalid/auth.html"]}},
+            {"passwordCredentials": [{"keyId": RIGHTS}]},
+            {"web": {"redirectUris": ["https://lab.example/auth.html"]}},
+        ):
+            graph = Mock()
+            graph.items.return_value = [app]
+            graph.request.return_value = {**app, **update}
+            with self.assertRaises(RuntimeError):
+                ensure_app(graph, PREFIX, "web-client", definition, GATEWAY, owner_id=FINANCE)
+            self.assertTrue(all(call.args[0] == "GET" for call in graph.request.call_args_list))
+
+    def test_web_redirect_rejects_untrusted_forms_before_graph_calls(self):
+        graph = Mock()
+        for redirect in ("http://lab.example/auth.html", "https://lab.example/auth.html?x=1",
+                         "https://lab.example/other", "https://user@lab.example/auth.html"):
+            with self.assertRaises(ValueError):
+                ensure_web_client(graph, PREFIX, GATEWAY, redirect, {}, Mock(), owner_id=FINANCE)
+        graph.request.assert_not_called()
+
     def test_federation_binds_only_the_expected_managed_identity(self):
         graph = Mock()
         graph.request.return_value = {"appId": GATEWAY}
