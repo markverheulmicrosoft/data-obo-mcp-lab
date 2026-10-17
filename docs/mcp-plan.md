@@ -160,6 +160,13 @@ Daarom moet dezelfde autorisatie ook op iedere daadwerkelijke toolaanroep gelden
 Als we later MCP resources of prompts publiceren, moeten die afzonderlijk worden
 gecontroleerd; een beveiligde toolcatalogus beschermt die niet automatisch.
 
+**Toolgranulariteit moet de gewenste rechten ondersteunen.** Een gepubliceerde
+[Fabric data agent exposeert precies een MCP-vraagtool](https://learn.microsoft.com/en-us/fabric/data-science/data-agent-mcp-server#how-it-works),
+niet automatisch aparte sales- en payroll-tools. Een gateway kan zo'n brede tool
+niet betrouwbaar splitsen in toegestane en verboden onderwerpen door alleen de
+prompttekst te beoordelen. Daarvoor zijn daadwerkelijk begrensde bronoperaties
+en bronrechten nodig; alleen wrappers andere namen geven is onvoldoende.
+
 Vereenvoudig de eerste proef met korte, read-only requests en zo weinig mogelijk
 sessiestaat. Bij sessies bind je de eigenaar aan de geverifieerde principal;
 een MCP-session-id is op zichzelf geen authenticatiebewijs. Valideer iedere
