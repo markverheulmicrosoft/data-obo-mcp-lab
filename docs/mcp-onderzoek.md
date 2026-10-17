@@ -232,7 +232,7 @@ geopenbaarde gegevens en blokkeert geen andere rechtstreeks toegestane bronroute
 
 Conceptuele toets op twee primaire bronnen: [Uber: Designing MCP Gateway](https://www.uber.com/us/en/blog/designing-mcp-gateway/) en de [MCP-autorisatiespecificatie (2026-07-28)](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization), inclusief de [security considerations](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization/security-considerations) van dezelfde versie. Dit is geen beoordeling van de eigen implementatie.
 
-- **Discovery is geen toegangscontrole.** Uber registreert nieuwe tools standaard uitgeschakeld en maakt ze pas zichtbaar na owner-goedkeuring; "discovery doesn't imply exposure" ([Uber](https://www.uber.com/us/en/blog/designing-mcp-gateway/)). Het MCP-protocol definieert geen tool-niveau autorisatie; De spec beschrijft autorisatie op transportniveau: 401 bij ontbrekende of ongeldige tokens, 403 met `insufficient_scope` bij onvoldoende scopes. Scope-challenges mogen afhangen van request-argumenten ([MCP spec 2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization)). De geraadpleegde pagina's beschrijven geen tool-catalogus of organisatiebrede rechten. Tool-lijsten filteren is dus UX; afdwinging per aanroep is onze verantwoordelijkheid. *Protocol vs. beleid:* welke tool bij welke rol hoort, is ons ontwerp.
+- **Discovery is geen toegangscontrole.** Uber registreert nieuwe tools standaard uitgeschakeld en maakt ze pas zichtbaar na owner-goedkeuring; "discovery doesn't imply exposure" ([Uber](https://www.uber.com/us/en/blog/designing-mcp-gateway/)). De spec beschrijft autorisatie op transportniveau: 401 bij ontbrekende of ongeldige tokens, 403 met `insufficient_scope` bij onvoldoende scopes. Scope-challenges mogen afhangen van request-argumenten ([MCP spec 2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization)). De geraadpleegde pagina's beschrijven geen tool-catalogus of organisatiebrede rechten. Tool-lijsten filteren is dus UX; afdwinging per aanroep is onze verantwoordelijkheid. *Protocol vs. beleid:* welke tool bij welke rol hoort, is ons ontwerp.
 - **Statische allowlist en namespacing zijn beleid.** Uber gebruikt een registry als single source of truth, met owner-goedgekeurde configwijzigingen en rollback ([Uber](https://www.uber.com/us/en/blog/designing-mcp-gateway/)). Dit zit niet in de geraadpleegde MCP-pagina's.
 - **Policy op geverifieerde claims.** Uber past policies toe per geïdentificeerde caller (mens, service, agent), op serverniveau met optionele tool-overrides ([Uber](https://www.uber.com/us/en/blog/designing-mcp-gateway/)). De spec eist dat de MCP-server tokens valideert en alleen accepteert die voor hemzelf zijn uitgegeven (audience, RFC 8707), met 401 bij ongeldige tokens ([MCP spec 2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization)). De MCP-autorisatie levert OAuth-mechanica; de volledige sales/payroll-permissieset van de organisatie komt daar niet uit. Die rolbeslissingen (verkoop versus loonstroken) zijn onze policy-laag, gebaseerd op geverifieerde claims.
 - **Geen token-passthrough naar upstream.** De spec verbiedt het: een upstream-API gebruikt een apart token van de upstream-autorisatieserver, en de MCP-server MOET het clienttoken niet doorgeven ([MCP security considerations 2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization/security-considerations)). Uber beschrijft het relayen van de user-token binnen de gateway en een 3P-service die die omwisselt naar een third-party token ([Uber](https://www.uber.com/us/en/blog/designing-mcp-gateway/)). Dat is geen bewijs dat willekeurige upstream-passthrough veilig is; een assertion die intern naar een token-exchange-component gaat, is niet automatisch verboden passthrough, maar audiences en vertrouwensgrenzen zouden we moeten inspecteren, wat hier niet is gedaan. Voor Fabric, Databricks en ERP/CRM betekent dit: per upstream een eigen, audience-specifiek token via token exchange of OBO; nooit de inkomende token doorsturen. Of OBO per leverancier werkt, is hier niet bevestigd.
@@ -243,3 +243,45 @@ Conceptuele toets op twee primaire bronnen: [Uber: Designing MCP Gateway](https:
 **Versie:** deze sectie is getoetst aan de MCP-spec 2026-07-28 (autorisatie en security considerations), dezelfde versie als in de bronlijst hierboven.
 
 **Huidige status (niet in deze toets beoordeeld):** de eigen gateway heeft custom auth en per-tool rollen; de testserver is apart; Fabric loopt via directe gedelegeerde SQL. Er is nog geen echte upstream Fabric- of Databricks-MCP gekoppeld.
+
+## Kandidaat: mcp-gateway-registry
+
+Beoordeeld op [commit ae80e8b](https://github.com/agentic-community/mcp-gateway-registry/tree/ae80e8b86d73e79e761a26886f901437396ecc80)
+(17 oktober 2026). Dit is een broncode-/documentatietoets, geen deployment,
+penetratietest of bewijs van onze Fabric-/Databricks-integratie.
+
+- **Passend gatewaymodel:** de registry beheert configuratie; de runtimegateway
+  controleert en routeert calls. Scopes bevatten server-, methode- en toolallowlists.
+  De implementatie controleert ook directe `tools/call` en filtert `tools/list`;
+  het is niet alleen een catalogus-UI. Zie
+  [autorisatiecode](https://github.com/agentic-community/mcp-gateway-registry/blob/ae80e8b86d73e79e761a26886f901437396ecc80/auth_server/server.py#L2335).
+- **Entra en OBO bestaan:** er is een
+  [Entra-provider](https://github.com/agentic-community/mcp-gateway-registry/blob/ae80e8b86d73e79e761a26886f901437396ecc80/auth_server/providers/entra.py)
+  en een expliciete runtime
+  [OBO-uitwisseling](https://github.com/agentic-community/mcp-gateway-registry/blob/ae80e8b86d73e79e761a26886f901437396ecc80/auth_server/egress_obo.py).
+  Generieke OIDC-aanmelding blijft iets anders dan bruikbare delegatie naar iedere bron.
+- **Ons user-only contract moet apart worden getoetst:** de Entra-provider ondersteunt
+  ook app-/M2M-identiteiten. Onze data-MCP vereist juist een gedelegeerd Entra-token
+  met de eigen audience en `access_as_user`. Een geldig gatewaytoken alleen is
+  niet hetzelfde als bewijs dat de oorspronkelijke gebruiker de bron bereikt.
+- **Discovery is een concrete aansluitvraag:** volgens de
+  [OBO-documentatie](https://github.com/agentic-community/mcp-gateway-registry/blob/ae80e8b86d73e79e761a26886f901437396ecc80/docs/obo-token-exchange.md)
+  gebruiken health/discovery-calls bij OBO-servers client credentials, terwijl
+  runtime-calls een gebruikerstoken gebruiken. Onze bestaande MCP weigert
+  app-only tokens. Dat moet opgelost/getoetst worden zonder de data-authenticatie
+  te verzwakken.
+- **Geen universele upstreamdekking:** OBO-targets zijn in de onderzochte implementatie
+  begrensd tot een `api://`-vorm. De precieze Fabric-/Databricks-audiences en
+  consentflows zijn hiermee niet bewezen. Onze eigen Entra-API is een logische
+  eerste upstream-proef, maar ook dat is nog geen geteste integratie.
+- **Grotere operationele voetafdruk:** de volledige Compose-configuratie bevat
+  onder meer MongoDB, OpenBao, IdP- en observability-integraties. Niet ieder
+  onderdeel hoeft in iedere configuratie actief te zijn. De aangetroffen Terraform-
+  deployment is AWS/ECS-gericht; een werkende Azure-deployment is niet geverifieerd.
+  Zie [deploymentbestanden](https://github.com/agentic-community/mcp-gateway-registry/tree/ae80e8b86d73e79e761a26886f901437396ecc80).
+- **Advies:** serieuze kandidaat om naast het lab te evalueren, in plaats van zelf
+  een complete registry te bouwen. Begin met een beschermde MCP als upstream,
+  twee gebruikers, directe verboden toolcalls en bewijs van de downstream-identiteit.
+  Bewaar de werkende huidige route totdat dezelfde bronrechtenmatrix slaagt.
+  Tabel-/rijrechten blijven bij Fabric, Databricks of ERP; server/toolallowlists
+  vervangen die niet.
