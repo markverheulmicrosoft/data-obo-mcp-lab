@@ -1,0 +1,5 @@
+.azure
+.foundry/
+**/TEAMS_APP_SETUP.md
+**/appPackage.zip
+**/.appPackage.zip.azd-generated

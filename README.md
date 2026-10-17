@@ -20,6 +20,9 @@ Dit is bewijs voor deze tools en inrichting, niet voor alle mogelijke bronroutes
 De nieuwe Fabric-route gebruikt een echt Warehouse met opgeslagen
 mockdata en SQL-RLS, geen productiedata. Databricks is bewust uitgesteld;
 Microsoft 365/Copilot en Scout zijn nog niet aangesloten.
+De nieuwe Foundry-hosted Teams-agent staat in **`teams\velora-teams-f9ba\`**.
+De hosted deployment en OAuth-configuratie zijn uitgevoerd; de echte persoonlijke
+Teams-aanmelding en rechtenproef moeten nog worden afgerond.
 De Foundry-voorbereidingscheck heeft lokaal ontbrekende `azd`-extensies geinstalleerd;
 deze zijn niet nodig voor de simulator.
 

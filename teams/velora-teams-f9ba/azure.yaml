@@ -1,0 +1,67 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+requiredVersions:
+    extensions:
+        azure.ai.agents: '>=1.0.0-beta.4'
+name: velora-teams-f9ba
+services:
+    ai-project:
+        host: azure.ai.project
+        deployments:
+            - name: gpt-5.4-mini
+              model:
+                  format: OpenAI
+                  name: gpt-5.4-mini
+                  version: "2026-03-17"
+              sku:
+                  name: DataZoneStandard
+                  capacity: 10
+    velora-teams-f9ba:
+        project: src/echo-activity
+        host: azure.ai.agent
+        language: python
+        uses:
+            - ai-project
+        agentEndpoint:
+            authorizationSchemes:
+                - type: BotServiceRbac
+            protocols:
+                - activity
+        codeConfiguration:
+            dependencyResolution: remote_build
+            entryPoint: main.py
+            runtime: python_3_13
+        container:
+            resources:
+                cpu: "0.5"
+                memory: 1Gi
+        description: Personal Teams data agent. Chooses fixed read-only MCP tools; Fabric enforces the signed-in user's data rights.
+        displayName: Velora data-assistent
+        kind: hosted
+        metadata:
+            tags:
+                - AI Agent Hosting
+                - Activity Protocol
+                - Bring Your Own
+                - Python
+        name: velora-teams-f9ba
+        protocols:
+            - protocol: activity
+              version: 2.0.0
+        environmentVariables:
+            - name: LAB_TENANT_ID
+              value: ${AZURE_TENANT_ID}
+            - name: MCP_URL
+              value: ${MCP_URL}
+            - name: AZURE_AI_MODEL_DEPLOYMENT_NAME
+              value: ${AZURE_AI_MODEL_DEPLOYMENT_NAME}
+            - name: AZURE_TRACING_GEN_AI_CONTENT_RECORDING_ENABLED
+              value: "false"
+            - name: AGENTAPPLICATION__USERAUTHORIZATION__HANDLERS__MCP__SETTINGS__AZUREBOTOAUTHCONNECTIONNAME
+              value: mcp-user
+            - name: AGENTAPPLICATION__USERAUTHORIZATION__HANDLERS__MCP__SETTINGS__TITLE
+              value: Aanmelden voor je data
+            - name: AGENTAPPLICATION__USERAUTHORIZATION__HANDLERS__MCP__SETTINGS__TEXT
+              value: Meld aan met hetzelfde account als in Teams.
+infra:
+    provider: microsoft.foundry

@@ -92,9 +92,12 @@ def ensure_app(
     allow_sql_delegation: bool = False,
 ) -> dict:
     owner_id = str(UUID(owner_id))
-    if kind not in {"gateway", "rights", "client", "web-client"}:
+    if kind not in {"gateway", "rights", "client", "web-client", "teams-client"}:
         raise ValueError("Onbekend type lab-app.")
     is_api = kind in {"gateway", "rights"}
+    expected_web = ["https://token.botframework.com/.auth/web/redirect"] if kind == "teams-client" else []
+    if kind == "teams-client" and (extra.get("web") or {}).get("redirectUris") != expected_web:
+        raise ValueError("Teams OAuth vereist de exacte Bot Token Store-redirect.")
     extend_sql_permission = False
     name, tag = f"{prefix}-{kind}", f"mcp-lab:{prefix}"
     query = f"appId eq '{UUID(expected_id)}'" if expected_id else f"displayName eq '{name}'"
@@ -138,7 +141,7 @@ def ensure_app(
             if app.get("passwordCredentials") or app.get("keyCredentials"):
                 raise RuntimeError("De public client mag geen achtergebleven clientcredentials hebben.")
         expected_spa = (extra.get("spa") or {}).get("redirectUris", []) if kind == "web-client" else []
-        if (app.get("web") or {}).get("redirectUris", []) or (
+        if (app.get("web") or {}).get("redirectUris", []) != expected_web or (
             (app.get("spa") or {}).get("redirectUris", []) != expected_spa
         ):
             raise RuntimeError(f"{kind}: onverwachte web/SPA-redirects; geen consent verlenen.")

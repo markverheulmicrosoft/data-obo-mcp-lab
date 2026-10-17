@@ -284,6 +284,20 @@ class DeploymentTests(unittest.TestCase):
 
 
 class IdentityTests(unittest.TestCase):
+    def test_teams_client_uses_only_the_fixed_token_store_redirect(self):
+        redirect = {"redirectUris": ["https://token.botframework.com/.auth/web/redirect"]}
+        app = {
+            **self.client_fixture(), "displayName": f"{PREFIX}-teams-client",
+            "publicClient": {"redirectUris": []}, "web": redirect,
+        }
+        graph = Mock()
+        graph.items.side_effect = [[app], [{"id": FINANCE}]]
+        graph.request.return_value = app
+        ensure_app(graph, PREFIX, "teams-client", {"web": redirect}, GATEWAY, owner_id=FINANCE)
+        self.assertTrue(all(call.args[0] == "GET" for call in graph.request.call_args_list))
+        with self.assertRaises(ValueError):
+            ensure_app(graph, PREFIX, "teams-client", {"web": {"redirectUris": ["https://other.invalid"]}}, owner_id=FINANCE)
+
     def test_permission_comparison_ignores_order_but_not_extra_grants_or_duplicates(self):
         expected = permission(RIGHTS, NORTH) + permission(SQL_APP_ID, SQL_SCOPE_ID)
         self.assertEqual(canonical_permissions(expected), canonical_permissions(list(reversed(expected))))
